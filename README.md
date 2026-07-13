@@ -4,17 +4,44 @@
 
 ## 实验环境
 
-实验在单张 NVIDIA GeForce RTX 4070 Ti SUPER 16GB 上完成，使用 Python 3.12、PyTorch 2.11.0、CUDA 12.8 和 AMP。其他支持 CUDA 的 NVIDIA GPU 也可运行；完整实验建议至少具有 16GB 显存。
+实验在单张 NVIDIA GeForce RTX 4070 Ti SUPER 16GB 上完成，训练使用 CUDA 12.8 wheel 和 AMP。其他 NVIDIA GPU 也可运行，但驱动必须支持 CUDA 12.8；完整实验建议至少具有 16GB 显存。
 
-在本仓库根目录执行：
+全部直接依赖及复现版本如下，安装过程不依赖本机已有的 `cvpr_paper` 环境：
+
+| 类别 | 依赖包 | 版本 | 用途 |
+| --- | --- | --- | --- |
+| 运行时 | Python | 3.12 | 代码运行 |
+| 深度学习 | torch | 2.11.0+cu128 | CUDA 训练、AMP 和显存统计 |
+| 深度学习 | torchvision | 0.26.0+cu128 | PyTorch 视觉算子 |
+| 视觉模型 | timm | 1.0.27 | DeiT、DINOv2 和预训练权重 |
+| 数值计算 | numpy | 2.4.6 | 数组与逐样本统计 |
+| 数据处理 | pandas | 3.0.3 | manifest 和结果表 |
+| 视频解码 | opencv-python-headless | 4.13.0.92 | 原始 MP4 解码与帧采样 |
+| 指标计算 | scikit-learn | 1.9.0 | BAcc、F1 和 accuracy |
+| 统计分析 | scipy | 1.17.1 | 配对区间与统计检验 |
+| 数据工具 | remotezip | 0.12.3 | 数据归档兼容工具 |
+| 实验日志 | tensorboard | 2.20.0 | 训练日志查看 |
+| 测试 | pytest | 8.4.2 | 协议与参数预算测试 |
+| 构建 | setuptools | 80.10.2 | 可编辑安装和 CLI 注册 |
+
+在本仓库根目录逐行执行即可从空环境安装全部依赖：
 
 ```bash
-conda env create -f environment.yml
+conda create -n cvpr_paper python=3.12 pip -y
 conda activate cvpr_paper
-pip install -e . --no-deps
+
+python -m pip install --extra-index-url https://download.pytorch.org/whl/cu128 \
+  torch==2.11.0+cu128 torchvision==0.26.0+cu128
+
+python -m pip install \
+  numpy==2.4.6 pandas==3.0.3 opencv-python-headless==4.13.0.92 \
+  scikit-learn==1.9.0 scipy==1.17.1 timm==1.0.27 \
+  remotezip==0.12.3 tensorboard==2.20.0 pytest==8.4.2 setuptools==80.10.2
+
+python -m pip install -e . --no-deps
 ```
 
-若 `cvpr_paper` 环境已经存在，只需执行后两行。随后检查环境、CUDA 和代码安装：
+等价的快捷安装方式是 `conda env create -f environment.yml`。安装完成后检查环境、CUDA 和代码：
 
 ```bash
 python -c "import torch; print(torch.__version__, torch.cuda.get_device_name()); assert torch.cuda.is_available()"
@@ -96,16 +123,37 @@ physlite-report --suite deit_b --verify
 
 ## 实验结果
 
-下表给出主实验的代表性参考结果，指标为三个训练种子的均值与标准差。`Net PEFT` 扣除了所有方法共享的任务头参数。
+下表是统一 DeiT-S、8 帧、family-grouped split 协议下的完整 28 配置矩阵。每行均为三个训练种子的均值与标准差；`Net PEFT` 扣除了所有方法共享的任务头参数，`Peak MiB` 为 PyTorch 记录的 CUDA 峰值分配显存。
 
-| 配置 | Net PEFT | Test BAcc | Test F1 |
-| --- | ---: | ---: | ---: |
-| Head-only | 0 | .639 +/- .009 | .587 +/- .027 |
-| VPT-8 | 3,072 | .725 +/- .039 | .727 +/- .077 |
-| Pure LoRA, last-2 q/v, rank 8 | 24,576 | .687 +/- .034 | .692 +/- .023 |
-| Pure LoRA, last-8 q/v, rank 2 | 24,576 | .734 +/- .012 | .728 +/- .056 |
-| Pure LoRA, last-8 query, rank 4 | 24,576 | .740 +/- .012 | .742 +/- .037 |
-| SSF + last-4 q/v LoRA（参考配置） | 43,776 | .723 +/- .036 | .737 +/- .027 |
-| D-SSF-LoRA | 43,776 | **.756 +/- .020** | **.759 +/- .023** |
+| Stage | 配置 | 控制变量或作用 | Net PEFT | Test BAcc | Test F1 | Peak MiB |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| A | Head-only | 冻结骨干参考 | 0 | .639 +/- .009 | .587 +/- .027 | 300 |
+| A | BitFit | bias 更新 | 51,456 | .633 +/- .051 | .622 +/- .054 | 1,654 |
+| A | IA3 last-4 q/v | 激活缩放 | 3,072 | .599 +/- .027 | .530 +/- .093 | 792 |
+| A | LoRA last-4 q/v, r4 | 低秩更新，LR 3e-4 | 24,576 | .653 +/- .041 | .623 +/- .124 | 756 |
+| A | Adapter last-4, b64 | 串行瓶颈 | 201,476 | .649 +/- .028 | .655 +/- .060 | 716 |
+| A | AdaptFormer last-4, b64 | 并行瓶颈 | 198,400 | .665 +/- .021 | .679 +/- .015 | 640 |
+| A | SSF all-layer | 特征仿射校准 | 19,200 | .664 +/- .005 | .622 +/- .027 | 2,091 |
+| A | VPT, 8 tokens | prompt 更新 | 3,072 | .725 +/- .039 | .727 +/- .077 | 1,698 |
+| A/B | SSF+LoRA last-4 q/v, r4 | 联合参考，LR 1e-3 | 43,776 | .723 +/- .036 | .737 +/- .027 | 2,167 |
+| B | Matched LoRA last-4 q/v, r4 | 组合对照，LR 1e-3 | 24,576 | .716 +/- .017 | .720 +/- .061 | 756 |
+| B | Joint LR 3e-4 | 优化设置对照 | 43,776 | .667 +/- .009 | .680 +/- .028 | 2,167 |
+| B | Joint LR 7e-4 | 优化设置对照 | 43,776 | .691 +/- .041 | .689 +/- .037 | 2,167 |
+| B | Joint LR 2e-3 | 优化设置对照 | 43,776 | .727 +/- .030 | .702 +/- .064 | 2,167 |
+| C | SSF+LoRA last-2 q/v, r8 | 等预算层覆盖 | 43,776 | .701 +/- .069 | .655 +/- .150 | 2,129 |
+| C | SSF+LoRA last-8 q/v, r2 | 等预算层覆盖 | 43,776 | .730 +/- .009 | .721 +/- .049 | 2,242 |
+| C | Pure LoRA last-2 q/v, r8 | 纯 LoRA 等预算覆盖 | 24,576 | .687 +/- .034 | .692 +/- .023 | 488 |
+| C | Pure LoRA last-8 q/v, r2 | 纯 LoRA 等预算覆盖 | 24,576 | .734 +/- .012 | .728 +/- .056 | 1,293 |
+| C | Pure LoRA first-4 q/v, r4 | 等预算层窗口 | 24,576 | .685 +/- .036 | .687 +/- .038 | 1,681 |
+| C | Pure LoRA middle-4 q/v, r4 | 等预算层窗口 | 24,576 | .732 +/- .021 | .729 +/- .020 | 1,218 |
+| D | SSF+LoRA last-4 q-only, r4 | 目标矩阵对照 | 31,488 | .710 +/- .011 | .708 +/- .024 | 2,130 |
+| D | SSF+LoRA last-4 v-only, r4 | 目标矩阵对照 | 31,488 | .666 +/- .003 | .635 +/- .006 | 2,130 |
+| D | Pure LoRA last-8 q-only, r4 | SSF 贡献对照 | 24,576 | .740 +/- .012 | .742 +/- .037 | 1,220 |
+| D | **D-SSF-LoRA: last-8 q-only, r4** | 等预算目标重分配 | 43,776 | **.756 +/- .020** | **.759 +/- .023** | 2,168 |
+| D | SSF+LoRA last-8 v-only, r4 | 等预算目标重分配 | 43,776 | .734 +/- .009 | .729 +/- .040 | 2,168 |
+| E | SSF+LoRA last-4 q/v, r1 | rank 扫描 | 25,344 | .682 +/- .014 | .694 +/- .042 | 2,166 |
+| E | SSF+LoRA last-4 q/v, r2 | rank 扫描 | 31,488 | .684 +/- .007 | .654 +/- .029 | 2,166 |
+| E | SSF+LoRA last-4 q/v, r8 | rank 扫描 | 68,352 | .730 +/- .009 | .726 +/- .033 | 2,168 |
+| E | SSF+LoRA last-4 q/v, r16 | rank 扫描 | 117,504 | .749 +/- .031 | .752 +/- .045 | 2,170 |
 
-最小复现完成后直接打开 `outputs/main/summary.md`；主实验完成后，完整 28 配置结果、配对差值、置信区间和 family bootstrap 位于 `outputs/main/summary.json`。仓库内的 `reference_results/` 是论文原始运行的紧凑快照，可在不附带 checkpoint 和逐视频预测的情况下核对结果。
+最小复现完成后直接打开 `outputs/main/summary.md`。主实验完成后，机器可读的完整矩阵、配对差值、置信区间和 family bootstrap 位于 `outputs/main/summary.json`；论文原始运行的对应快照位于 `reference_results/main.json`。
