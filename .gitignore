@@ -1,0 +1,14 @@
+data/Physion/
+data/Physion.zip
+outputs/
+*.pt
+__pycache__/
+*.py[cod]
+*.egg-info/
+.coverage
+build/
+dist/
+.pytest_cache/
+.DS_Store
+.idea/
+.vscode/

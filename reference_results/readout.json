@@ -1,0 +1,14 @@
+[
+  {
+    "name": "linear_head",
+    "n": 1,
+    "trainable_params": 21506,
+    "trainable_pct": 0.025059379403175677
+  },
+  {
+    "name": "linear_peft",
+    "n": 1,
+    "trainable_params": 109058,
+    "trainable_pct": 0.12694785476424156
+  }
+]

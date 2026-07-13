@@ -1,0 +1,230 @@
+{
+  "schema_version": 1,
+  "defaults": {
+    "data_root": "data/Physion",
+    "manifest": "data/manifests/main.csv",
+    "pretrained": true,
+    "lr": 0.001,
+    "weight_decay": 0.05,
+    "num_workers": 2,
+    "device": "cuda",
+    "amp": true
+  },
+  "protocols": {
+    "main": {
+      "backbone": "deit_small_patch16_224",
+      "epochs": 3,
+      "batch_size": 8,
+      "frames": 8,
+      "image_size": 224,
+      "temporal": "motion_bins",
+      "sampling": "uniform"
+    },
+    "deit_b": {
+      "backbone": "deit_base_patch16_224",
+      "epochs": 3,
+      "batch_size": 4,
+      "frames": 8,
+      "image_size": 224,
+      "temporal": "motion_bins",
+      "sampling": "uniform"
+    },
+    "staged": {
+      "backbone": "deit_small_patch16_224",
+      "epochs": 4,
+      "batch_size": 8,
+      "frames": 8,
+      "image_size": 224,
+      "temporal": "motion_bins",
+      "sampling": "uniform"
+    },
+    "prefix8": {
+      "backbone": "deit_base_patch16_224",
+      "epochs": 5,
+      "batch_size": 4,
+      "frames": 8,
+      "image_size": 224,
+      "temporal": "motion_bins",
+      "sampling": "observed",
+      "observation_seconds": 1.5
+    },
+    "prefix16": {
+      "backbone": "deit_base_patch16_224",
+      "epochs": 5,
+      "batch_size": 4,
+      "frames": 16,
+      "image_size": 224,
+      "temporal": "motion_bins",
+      "sampling": "observed",
+      "observation_seconds": 1.5
+    },
+    "counterfactual": {
+      "backbone": "deit_small_patch16_224",
+      "epochs": 3,
+      "batch_size": 8,
+      "frames": 8,
+      "image_size": 224,
+      "temporal": "motion_stats",
+      "sampling": "uniform"
+    },
+    "readout": {
+      "backbone": "deit_base_patch16_224",
+      "epochs": 8,
+      "batch_size": 4,
+      "frames": 8,
+      "image_size": 224,
+      "temporal": "motion_bins",
+      "sampling": "observed",
+      "observation_seconds": 1.5,
+      "head_type": "linear"
+    }
+  },
+  "methods": {
+    "head": {"method": "head_only"},
+    "bitfit": {"method": "bitfit", "peft_lr": 0.0001},
+    "ssf": {"method": "ssf", "ssf_layers": "all", "peft_lr": 0.001},
+    "ia3": {"method": "ia3", "ia3_layers": "last4", "ia3_targets": "qv", "peft_lr": 0.001},
+    "adapter": {"method": "adapter", "adapter_layers": "last4", "adapter_bottleneck": 64, "peft_lr": 0.0003},
+    "adaptformer": {"method": "adaptformer", "adaptformer_layers": "last4", "adaptformer_bottleneck": 64, "adaptformer_scale": 0.1, "peft_lr": 0.0003},
+    "vpt": {"method": "vpt", "vpt_prompt_tokens": 8, "vpt_init_std": 0.02, "peft_lr": 0.01},
+    "lora_r4_lr3e4": {"method": "lora_qv", "lora_rank": 4, "lora_alpha": 8, "lora_layers": "last4", "lora_targets": "qv", "peft_lr": 0.0003},
+    "lora_last4_r4": {"method": "lora_qv", "lora_rank": 4, "lora_alpha": 8, "lora_layers": "last4", "lora_targets": "qv", "peft_lr": 0.001},
+    "lora_last2_r8": {"method": "lora_qv", "lora_rank": 8, "lora_alpha": 16, "lora_layers": "last2", "lora_targets": "qv", "peft_lr": 0.001},
+    "lora_last8_r2": {"method": "lora_qv", "lora_rank": 2, "lora_alpha": 4, "lora_layers": "last8", "lora_targets": "qv", "peft_lr": 0.001},
+    "lora_first4_r4": {"method": "lora_qv", "lora_rank": 4, "lora_alpha": 8, "lora_layers": "idx:0,1,2,3", "lora_targets": "qv", "peft_lr": 0.001},
+    "lora_middle4_r4": {"method": "lora_qv", "lora_rank": 4, "lora_alpha": 8, "lora_layers": "idx:4,5,6,7", "lora_targets": "qv", "peft_lr": 0.001},
+    "lora_last8_q_r4": {"method": "lora_qv", "lora_rank": 4, "lora_alpha": 8, "lora_layers": "last8", "lora_targets": "q", "peft_lr": 0.001},
+    "ssf_lora_last4_r4": {"method": "ssf_lora_qv", "ssf_layers": "all", "lora_rank": 4, "lora_alpha": 8, "lora_layers": "last4", "lora_targets": "qv", "peft_lr": 0.001},
+    "ssf_lora_last2_r8": {"method": "ssf_lora_qv", "ssf_layers": "all", "lora_rank": 8, "lora_alpha": 16, "lora_layers": "last2", "lora_targets": "qv", "peft_lr": 0.001},
+    "ssf_lora_last8_r2": {"method": "ssf_lora_qv", "ssf_layers": "all", "lora_rank": 2, "lora_alpha": 4, "lora_layers": "last8", "lora_targets": "qv", "peft_lr": 0.001},
+    "ssf_lora_last4_q_r4": {"method": "ssf_lora_qv", "ssf_layers": "all", "lora_rank": 4, "lora_alpha": 8, "lora_layers": "last4", "lora_targets": "q", "peft_lr": 0.001},
+    "ssf_lora_last4_v_r4": {"method": "ssf_lora_qv", "ssf_layers": "all", "lora_rank": 4, "lora_alpha": 8, "lora_layers": "last4", "lora_targets": "v", "peft_lr": 0.001},
+    "ssf_lora_last8_q_r4": {"method": "ssf_lora_qv", "ssf_layers": "all", "lora_rank": 4, "lora_alpha": 8, "lora_layers": "last8", "lora_targets": "q", "peft_lr": 0.001},
+    "ssf_lora_last8_v_r4": {"method": "ssf_lora_qv", "ssf_layers": "all", "lora_rank": 4, "lora_alpha": 8, "lora_layers": "last8", "lora_targets": "v", "peft_lr": 0.001},
+    "ssf_lora_r1": {"method": "ssf_lora_qv", "ssf_layers": "all", "lora_rank": 1, "lora_alpha": 2, "lora_layers": "last4", "lora_targets": "qv", "peft_lr": 0.001},
+    "ssf_lora_r2": {"method": "ssf_lora_qv", "ssf_layers": "all", "lora_rank": 2, "lora_alpha": 4, "lora_layers": "last4", "lora_targets": "qv", "peft_lr": 0.001},
+    "ssf_lora_r8": {"method": "ssf_lora_qv", "ssf_layers": "all", "lora_rank": 8, "lora_alpha": 16, "lora_layers": "last4", "lora_targets": "qv", "peft_lr": 0.001},
+    "ssf_lora_r16": {"method": "ssf_lora_qv", "ssf_layers": "all", "lora_rank": 16, "lora_alpha": 32, "lora_layers": "last4", "lora_targets": "qv", "peft_lr": 0.001},
+    "ssf_lora_lr3e4": {"method": "ssf_lora_qv", "ssf_layers": "all", "lora_rank": 4, "lora_alpha": 8, "lora_layers": "last4", "lora_targets": "qv", "peft_lr": 0.0003},
+    "ssf_lora_lr7e4": {"method": "ssf_lora_qv", "ssf_layers": "all", "lora_rank": 4, "lora_alpha": 8, "lora_layers": "last4", "lora_targets": "qv", "peft_lr": 0.0007},
+    "ssf_lora_lr2e3": {"method": "ssf_lora_qv", "ssf_layers": "all", "lora_rank": 4, "lora_alpha": 8, "lora_layers": "last4", "lora_targets": "qv", "peft_lr": 0.002},
+    "temporal_lora_lr3e4": {"method": "temporal_lora", "lora_rank": 4, "lora_alpha": 8, "lora_layers": "last4", "lora_targets": "qv", "peft_lr": 0.0003},
+    "ssf_temporal_lora_lr3e4": {"method": "ssf_temporal_lora", "ssf_layers": "all", "lora_rank": 4, "lora_alpha": 8, "lora_layers": "last4", "lora_targets": "qv", "peft_lr": 0.0003},
+    "value_calibrated_r8": {"method": "ssf_ia3_lora_qv", "ssf_layers": "all", "lora_rank": 8, "lora_alpha": 16, "lora_layers": "last4", "lora_targets": "qv", "ia3_targets": "v", "peft_lr": 0.001}
+  },
+  "suites": {
+    "main": {
+      "protocol": "main",
+      "seeds": [0, 1, 2],
+      "runs": [
+        {"name": "op_head", "label": "Head only", "axes": ["operator", "composition"], "method": "head"},
+        {"name": "op_bitfit", "label": "BitFit", "axes": ["operator"], "method": "bitfit"},
+        {"name": "op_ssf", "label": "SSF", "axes": ["operator", "composition"], "method": "ssf"},
+        {"name": "op_lora_r4", "label": "LoRA last4 q/v r4", "axes": ["operator"], "method": "lora_r4_lr3e4"},
+        {"name": "composition_lora_r4_lr1e3", "label": "Matched LoRA last4 q/v r4", "axes": ["composition", "pure_support", "location"], "method": "lora_last4_r4"},
+        {"name": "op_ia3", "label": "IA3 last4 q/v", "axes": ["operator"], "method": "ia3"},
+        {"name": "op_adapter_b64", "label": "Adapter last4 b64", "axes": ["operator"], "method": "adapter"},
+        {"name": "op_adaptformer_b64", "label": "AdaptFormer last4 b64", "axes": ["operator"], "method": "adaptformer"},
+        {"name": "op_vpt8", "label": "VPT 8 tokens", "axes": ["operator"], "method": "vpt"},
+        {"name": "ssf_lora_last4_r4_qv", "label": "SSF+LoRA last4 q/v r4", "axes": ["operator", "composition", "support", "target", "rank", "optimize"], "method": "ssf_lora_last4_r4"},
+        {"name": "support_last2_r8", "label": "SSF+LoRA last2 q/v r8", "axes": ["support"], "method": "ssf_lora_last2_r8"},
+        {"name": "support_last8_r2", "label": "SSF+LoRA last8 q/v r2", "axes": ["support", "allocation"], "method": "ssf_lora_last8_r2"},
+        {"name": "pure_support_last2_r8", "label": "Pure LoRA last2 q/v r8", "axes": ["pure_support"], "method": "lora_last2_r8"},
+        {"name": "pure_support_last8_r2", "label": "Pure LoRA last8 q/v r2", "axes": ["pure_support"], "method": "lora_last8_r2"},
+        {"name": "location_first4_r4", "label": "Pure LoRA first4 q/v r4", "axes": ["location"], "method": "lora_first4_r4"},
+        {"name": "location_middle4_r4", "label": "Pure LoRA middle4 q/v r4", "axes": ["location"], "method": "lora_middle4_r4"},
+        {"name": "target_q_r4", "label": "SSF+LoRA last4 query r4", "axes": ["target"], "method": "ssf_lora_last4_q_r4"},
+        {"name": "target_v_r4", "label": "SSF+LoRA last4 value r4", "axes": ["target"], "method": "ssf_lora_last4_v_r4"},
+        {"name": "allocation_q_last8_r4", "label": "D-SSF-LoRA", "axes": ["allocation", "method_ablation"], "method": "ssf_lora_last8_q_r4"},
+        {"name": "pure_allocation_q_last8_r4", "label": "Pure LoRA last8 query r4", "axes": ["method_ablation"], "method": "lora_last8_q_r4"},
+        {"name": "allocation_v_last8_r4", "label": "SSF+LoRA last8 value r4", "axes": ["allocation"], "method": "ssf_lora_last8_v_r4"},
+        {"name": "rank_r1", "label": "SSF+LoRA rank 1", "axes": ["rank"], "method": "ssf_lora_r1"},
+        {"name": "rank_r2", "label": "SSF+LoRA rank 2", "axes": ["rank"], "method": "ssf_lora_r2"},
+        {"name": "rank_r8", "label": "SSF+LoRA rank 8", "axes": ["rank"], "method": "ssf_lora_r8"},
+        {"name": "rank_r16", "label": "SSF+LoRA rank 16", "axes": ["rank"], "method": "ssf_lora_r16"},
+        {"name": "opt_lr3e4", "label": "SSF+LoRA LR 3e-4", "axes": ["optimize"], "method": "ssf_lora_lr3e4"},
+        {"name": "opt_lr7e4", "label": "SSF+LoRA LR 7e-4", "axes": ["optimize"], "method": "ssf_lora_lr7e4"},
+        {"name": "opt_lr2e3", "label": "SSF+LoRA LR 2e-3", "axes": ["optimize"], "method": "ssf_lora_lr2e3"}
+      ]
+    },
+    "deit_b": {
+      "protocol": "deit_b",
+      "seeds": [0, 1, 2],
+      "runs": [
+        {"name": "head", "label": "Head only", "method": "head"},
+        {"name": "last2_r8", "label": "SSF+LoRA last2 q/v r8", "method": "ssf_lora_last2_r8"},
+        {"name": "last4_r4", "label": "SSF+LoRA last4 q/v r4", "method": "ssf_lora_last4_r4"},
+        {"name": "last8_r2", "label": "SSF+LoRA last8 q/v r2", "method": "ssf_lora_last8_r2"},
+        {"name": "pure_query", "label": "Pure LoRA last8 query r4", "method": "lora_last8_q_r4"},
+        {"name": "d_ssf_lora", "label": "D-SSF-LoRA", "method": "ssf_lora_last8_q_r4"}
+      ]
+    },
+    "staged": {
+      "protocol": "staged",
+      "seeds": [0, 1, 2],
+      "runs": [
+        {"name": "pure", "label": "Pure query-LoRA", "method": "lora_last8_q_r4"},
+        {"name": "joint", "label": "Joint SSF-LoRA", "method": "ssf_lora_last8_q_r4"},
+        {"name": "warmup_joint", "label": "SSF warmup then joint", "method": "ssf_lora_last8_q_r4", "overrides": {"ssf_warmup_epochs": 1}},
+        {"name": "warmup_freeze", "label": "SSF warmup then freeze", "method": "ssf_lora_last8_q_r4", "overrides": {"ssf_warmup_epochs": 1, "freeze_ssf_after_warmup": true}}
+      ]
+    },
+    "repeated": {
+      "protocol": "main",
+      "seeds": [0],
+      "manifests": "data/manifests/repeated_splits/split_*.csv",
+      "runs": [
+        {"name": "head", "label": "Head only", "method": "head"},
+        {"name": "distributed", "label": "SSF+LoRA last8 q/v r2", "method": "ssf_lora_last8_r2"},
+        {"name": "pure_query", "label": "Pure LoRA last8 query r4", "method": "lora_last8_q_r4"},
+        {"name": "d_ssf_query", "label": "D-SSF-LoRA", "method": "ssf_lora_last8_q_r4"}
+      ]
+    },
+    "prefix8": {
+      "protocol": "prefix8",
+      "seeds": [0],
+      "runs": [
+        {"name": "head", "label": "Head only", "method": "head", "seeds": [0, 1, 2]},
+        {"name": "ssf", "label": "SSF", "method": "ssf"},
+        {"name": "lora", "label": "LoRA", "method": "lora_last4_r4"},
+        {"name": "ssf_lora", "label": "SSF+LoRA", "method": "ssf_lora_last4_r4"},
+        {"name": "ssf_lora_lr3e4", "label": "SSF+LoRA LR 3e-4", "method": "ssf_lora_lr3e4", "seeds": [0, 1, 2]},
+        {"name": "temporal_lora", "label": "Temporal-LoRA", "method": "temporal_lora_lr3e4"},
+        {"name": "ssf_temporal_lora", "label": "SSF+Temporal-LoRA", "method": "ssf_temporal_lora_lr3e4"}
+      ]
+    },
+    "prefix16": {
+      "protocol": "prefix16",
+      "seeds": [0, 1, 2],
+      "runs": [
+        {"name": "head", "label": "Head only", "method": "head"},
+        {"name": "ssf_lora_lr3e4", "label": "SSF+LoRA LR 3e-4", "method": "ssf_lora_lr3e4"}
+      ]
+    },
+    "backbone_scout": {
+      "protocol": "counterfactual",
+      "seeds": [0, 1, 2],
+      "runs": [
+        {"name": "deit_head", "label": "DeiT-S / 512 head", "method": "head", "overrides": {"image_size": 512, "batch_size": 4}},
+        {"name": "deit_peft", "label": "DeiT-S / 512 PEFT", "method": "value_calibrated_r8", "overrides": {"image_size": 512, "batch_size": 4}},
+        {"name": "dinov2_head", "label": "DINOv2-S / 518 head", "method": "head", "overrides": {"backbone": "vit_small_patch14_dinov2", "image_size": 518, "batch_size": 4}},
+        {"name": "dinov2_peft", "label": "DINOv2-S / 518 PEFT", "method": "value_calibrated_r8", "overrides": {"backbone": "vit_small_patch14_dinov2", "image_size": 518, "batch_size": 4}}
+      ]
+    },
+    "counterfactual": {
+      "protocol": "counterfactual",
+      "seeds": [0, 1, 2],
+      "runs": [
+        {"name": "rank8_motion_stats", "label": "Rank-8 value-calibrated model", "method": "value_calibrated_r8", "checkpoint": true}
+      ]
+    },
+    "readout": {
+      "protocol": "readout",
+      "seeds": [0],
+      "runs": [
+        {"name": "linear_head", "label": "Linear head-only", "method": "head"},
+        {"name": "linear_peft", "label": "Linear SSF+LoRA", "method": "ssf_lora_lr3e4"}
+      ]
+    }
+  }
+}

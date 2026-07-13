@@ -1,0 +1,54 @@
+[
+  {
+    "name": "deit_peft",
+    "n": 3,
+    "trainable_pct": 2.510098390066996,
+    "val_bacc_mean": 0.8002765792676181,
+    "val_bacc_std": 0.014425199513416309,
+    "test_bacc_mean": 0.7639769098501596,
+    "test_bacc_std": 0.010247247231877673,
+    "test_f1_mean": 0.7329664570230608,
+    "test_f1_std": 0.023325795399867576,
+    "peak_mem_mb_mean": 5426.2841796875,
+    "seconds_mean": 152.87993850133353
+  },
+  {
+    "name": "dinov2_peft",
+    "n": 3,
+    "trainable_pct": 2.502045556114986,
+    "val_bacc_mean": 0.7993693992698307,
+    "val_bacc_std": 0.06645542400547609,
+    "test_bacc_mean": 0.7388970768852862,
+    "test_bacc_std": 0.05313712523250754,
+    "test_f1_mean": 0.7730032412732386,
+    "test_f1_std": 0.03854247882201173,
+    "peak_mem_mb_mean": 7149.296875,
+    "seconds_mean": 177.89169424833258
+  },
+  {
+    "name": "dinov2_head",
+    "n": 3,
+    "trainable_pct": 2.199906510735347,
+    "val_bacc_mean": 0.7202898550724638,
+    "val_bacc_std": 0.02473543627864014,
+    "test_bacc_mean": 0.6953574060427413,
+    "test_bacc_std": 0.01520427097602455,
+    "test_f1_mean": 0.694418901660281,
+    "test_f1_std": 0.011644379326635456,
+    "peak_mem_mb_mean": 745.54248046875,
+    "seconds_mean": 150.22496282866754
+  },
+  {
+    "name": "deit_head",
+    "n": 3,
+    "trainable_pct": 2.2070089226097127,
+    "val_bacc_mean": 0.6851974775970794,
+    "val_bacc_std": 0.0019264217538574368,
+    "test_bacc_mean": 0.6304839105870793,
+    "test_bacc_std": 0.00238229540593925,
+    "test_f1_mean": 0.5662367230935192,
+    "test_f1_std": 0.0153322751185726,
+    "peak_mem_mb_mean": 613.74755859375,
+    "seconds_mean": 147.4823127356649
+  }
+]

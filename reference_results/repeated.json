@@ -1,0 +1,26 @@
+[
+  {
+    "name": "head",
+    "n": 5,
+    "test_bacc_mean": 0.652464939866815,
+    "test_bacc_std": 0.03034661306029109
+  },
+  {
+    "name": "distributed",
+    "n": 5,
+    "test_bacc_mean": 0.7460809006973251,
+    "test_bacc_std": 0.04377305377413402
+  },
+  {
+    "name": "pure_query",
+    "n": 5,
+    "test_bacc_mean": 0.7540231622122249,
+    "test_bacc_std": 0.048588305578137383
+  },
+  {
+    "name": "d_ssf_query",
+    "n": 5,
+    "test_bacc_mean": 0.7588726826438967,
+    "test_bacc_std": 0.05581500833451251
+  }
+]

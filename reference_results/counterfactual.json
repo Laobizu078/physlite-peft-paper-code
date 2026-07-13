@@ -1,0 +1,15 @@
+[
+  {
+    "name": "rank8_motion_stats",
+    "n": 3,
+    "trainable_pct": 2.545997194454293,
+    "val_bacc_mean": 0.7890253346609138,
+    "val_bacc_std": 0.017132036944768954,
+    "test_bacc_mean": 0.7652173913043478,
+    "test_bacc_std": 0.018525250468774915,
+    "test_f1_mean": 0.7831958063521431,
+    "test_f1_std": 0.0007206078696265208,
+    "peak_mem_mb_mean": 2202.30126953125,
+    "seconds_mean": 125.19689899366615
+  }
+]

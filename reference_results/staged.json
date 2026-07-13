@@ -1,0 +1,46 @@
+[
+  {
+    "name": "pure",
+    "n": 3,
+    "trainable_params": 718850,
+    "val_bacc_mean": 0.7817789578493196,
+    "val_bacc_std": 0.0057074381925299655,
+    "test_bacc_mean": 0.7576762466224515,
+    "test_bacc_std": 0.00634418224772035,
+    "test_f1_mean": 0.7697335475559662,
+    "test_f1_std": 0.014292725536478573
+  },
+  {
+    "name": "joint",
+    "n": 3,
+    "trainable_params": 738050,
+    "val_bacc_mean": 0.7952870892797876,
+    "val_bacc_std": 0.029309252061327572,
+    "test_bacc_mean": 0.7513633014001474,
+    "test_bacc_std": 0.015707326637184948,
+    "test_f1_mean": 0.7539965538551462,
+    "test_f1_std": 0.019740257965699087
+  },
+  {
+    "name": "warmup_freeze",
+    "n": 3,
+    "trainable_params": 738050,
+    "val_bacc_mean": 0.7809713463878748,
+    "val_bacc_std": 0.00702774367482449,
+    "test_bacc_mean": 0.7371284696634733,
+    "test_bacc_std": 0.04134760250015831,
+    "test_f1_mean": 0.7393363363363363,
+    "test_f1_std": 0.05660569080276547
+  },
+  {
+    "name": "warmup_joint",
+    "n": 3,
+    "trainable_params": 738050,
+    "val_bacc_mean": 0.7885053656377917,
+    "val_bacc_std": 0.01517923464387161,
+    "test_bacc_mean": 0.7336403831982313,
+    "test_bacc_std": 0.04901330266266051,
+    "test_f1_mean": 0.7205667399842157,
+    "test_f1_std": 0.0766573538594562
+  }
+]

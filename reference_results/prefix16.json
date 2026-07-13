@@ -1,0 +1,14 @@
+[
+  {
+    "name": "ssf_lora_lr3e4",
+    "n": 3,
+    "trainable_params": 1475330,
+    "trainable_pct": 1.6904579103330974
+  },
+  {
+    "name": "head",
+    "n": 3,
+    "trainable_params": 1387778,
+    "trainable_pct": 1.5917361639082521
+  }
+]

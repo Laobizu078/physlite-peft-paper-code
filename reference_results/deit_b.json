@@ -1,0 +1,80 @@
+[
+  {
+    "name": "last4_r4",
+    "n": 3,
+    "trainable_pct": 1.6904579103330974,
+    "val_bacc_mean": 0.825290408230999,
+    "val_bacc_std": 0.018873950797458194,
+    "test_bacc_mean": 0.7916482436747727,
+    "test_bacc_std": 0.0042868735850656375,
+    "test_f1_mean": 0.7970416164822899,
+    "test_f1_std": 0.0053630604251267665,
+    "peak_mem_mb_mean": 2520.517578125,
+    "seconds_mean": 126.3899203903323
+  },
+  {
+    "name": "last2_r8",
+    "n": 3,
+    "trainable_pct": 1.6904579103330974,
+    "val_bacc_mean": 0.8167828299590663,
+    "val_bacc_std": 0.022711773345278536,
+    "test_bacc_mean": 0.78069270449521,
+    "test_bacc_std": 0.018761553801697996,
+    "test_f1_mean": 0.7712438174882121,
+    "test_f1_std": 0.020454991490146124,
+    "peak_mem_mb_mean": 2482.75,
+    "seconds_mean": 125.96253438800038
+  },
+  {
+    "name": "last8_r2",
+    "n": 3,
+    "trainable_pct": 1.6904579103330974,
+    "val_bacc_mean": 0.8301028874875539,
+    "val_bacc_std": 0.01129336247012753,
+    "test_bacc_mean": 0.7783099975436011,
+    "test_bacc_std": 0.02035173941991121,
+    "test_f1_mean": 0.7757104609179296,
+    "test_f1_std": 0.03159731305103965,
+    "peak_mem_mb_mean": 2595.287109375,
+    "seconds_mean": 126.29940916633375
+  },
+  {
+    "name": "d_ssf_lora",
+    "n": 3,
+    "trainable_pct": 1.6904579103330974,
+    "val_bacc_mean": 0.809138179002102,
+    "val_bacc_std": 0.019478436151264423,
+    "test_bacc_mean": 0.7755588307541145,
+    "test_bacc_std": 0.019696938430394686,
+    "test_f1_mean": 0.7753838865358383,
+    "test_f1_std": 0.02713295552702595,
+    "peak_mem_mb_mean": 2521.111328125,
+    "seconds_mean": 126.19001365166757
+  },
+  {
+    "name": "pure_query",
+    "n": 3,
+    "trainable_pct": 1.6471832951291232,
+    "val_bacc_mean": 0.7849651510122801,
+    "val_bacc_std": 0.005976416563348577,
+    "test_bacc_mean": 0.7522598870056497,
+    "test_bacc_std": 0.023859142554259655,
+    "test_f1_mean": 0.7436448338200529,
+    "test_f1_std": 0.035316069497376604,
+    "peak_mem_mb_mean": 1529.73388671875,
+    "seconds_mean": 125.24731805266674
+  },
+  {
+    "name": "head",
+    "n": 3,
+    "trainable_pct": 1.5917361639082521,
+    "val_bacc_mean": 0.7233211638455582,
+    "val_bacc_std": 0.014327160592272828,
+    "test_bacc_mean": 0.6755465487595186,
+    "test_bacc_std": 0.011785781791687622,
+    "test_f1_mean": 0.6797346676482093,
+    "test_f1_std": 0.0038159728119908248,
+    "peak_mem_mb_mean": 537.41455078125,
+    "seconds_mean": 124.57321718633223
+  }
+]

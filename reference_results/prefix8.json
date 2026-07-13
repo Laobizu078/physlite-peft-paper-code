@@ -1,0 +1,44 @@
+[
+  {
+    "name": "ssf_lora_lr3e4",
+    "n": 3,
+    "trainable_params": 1475330,
+    "trainable_pct": 1.6904579103330974
+  },
+  {
+    "name": "temporal_lora",
+    "n": 1,
+    "trainable_params": 1446146,
+    "trainable_pct": 1.657572676937246
+  },
+  {
+    "name": "ssf_lora",
+    "n": 1,
+    "trainable_params": 1475330,
+    "trainable_pct": 1.6904579103330974
+  },
+  {
+    "name": "head",
+    "n": 3,
+    "trainable_params": 1387778,
+    "trainable_pct": 1.5917361639082521
+  },
+  {
+    "name": "ssf_temporal_lora",
+    "n": 1,
+    "trainable_params": 1484546,
+    "trainable_pct": 1.7008381521108724
+  },
+  {
+    "name": "lora",
+    "n": 1,
+    "trainable_params": 1436930,
+    "trainable_pct": 1.6471832951291232
+  },
+  {
+    "name": "ssf",
+    "n": 1,
+    "trainable_params": 1426178,
+    "trainable_pct": 1.6350595748912518
+  }
+]
