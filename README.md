@@ -2,13 +2,13 @@
 
 作者：周文煜（学号：3024244529）
 
-本仓库复现课程论文中的 PEFT 实验。建议按下列四节从上到下执行；首次运行会自动下载数据集和预训练权重。所有训练均强制使用 CUDA，不会静默回退到 CPU。
+本仓库复现论文中整个的 PEFT 实验。首次运行会自动下载数据集和预训练权重。所有训练均强制使用 CUDA，不会静默回退到 CPU。
 
 ## 实验环境
 
-实验在单张 NVIDIA GeForce RTX 4070 Ti SUPER 16GB 上完成，训练使用 CUDA 12.8 wheel 和 AMP。其他 NVIDIA GPU 也可运行，但驱动必须支持 CUDA 12.8；完整实验建议至少具有 16GB 显存。
+实验在单张 NVIDIA GeForce RTX 4070 Ti SUPER 16GB 上完成，训练使用 CUDA 12.8 wheel 和 AMP加速。完整实验至少需要占用 6GB 显存。
 
-全部直接依赖及复现版本如下，建议创建名为 `physlite-peft` 的独立环境；运行代码本身不依赖该环境名：
+全部直接依赖及版本如下：
 
 | 类别 | 依赖包 | 版本 | 用途 |
 | --- | --- | --- | --- |
@@ -43,42 +43,42 @@ python -m pip install \
 python -m pip install -e . --no-deps
 ```
 
-等价的快捷安装方式是 `conda env create -f environment.yml`。安装完成后检查环境、CUDA 和代码：
+建议创建名为 `physlite-peft` 的独立conda虚拟环境（运行代码本身不依赖该环境名），仓库提供等价的快捷conda环境安装方式：
+
+```bash
+conda env create -f environment.yml`
+```
+
+(可选)安装完成后检查环境、CUDA 和代码：
 
 ```bash
 python -c "import torch; print(torch.__version__, torch.cuda.get_device_name()); assert torch.cuda.is_available()"
 pytest -q
 ```
 
-测试不需要数据集或 GPU；正式训练入口会在 CUDA 不可用时直接终止。
+pytest测试不需要数据集或 GPU。
 
 ## 数据集下载
 
-实验使用 Physion-Test-Core 的 1200 个视频。运行以下命令即可自动下载约 271MiB 的公开压缩包、校验 SHA-256、解压到 `data/Physion/`，并检查主划分和五份重复划分不存在 family 泄漏：
+实验使用 Physion-Test-Core 的 1200 个视频。
+
+在目录下运行以下命令即可自动下载约 271MiB 的公开压缩包、校验 SHA-256、解压到 `data/Physion/`，并检查主划分和五份重复划分不存在 family 泄漏：
 
 ```bash
 physlite-prepare
 ```
 
-数据集直链：[Physion.zip](https://physics-benchmarking-neurips2021-dataset.s3.amazonaws.com/Physion.zip)。脚本校验值为：
-
-```text
-1c80e51d9d299a54cc78bb20b9bb9b597d3b18067fd2f5a06e4e0a3a0c2c0c26
-```
-
-若本机已有解压后的数据，将其放置或软链接为 `data/Physion/`，然后执行：
-
-```bash
-physlite-prepare --skip-download
-```
+数据集直链：[Physion.zip](https://physics-benchmarking-neurips2021-dataset.s3.amazonaws.com/Physion.zip)。脚本校验值为:`1c80e51d9d299a54cc78bb20b9bb9b597d3b18067fd2f5a06e4e0a3a0c2c0c26`。
 
 固定的无泄漏 CSV 划分已保存在 `data/manifests/`。DeiT 和 DINOv2 预训练权重由 `timm` 在首次训练时自动下载。
 
 ## 运行方式
 
-### 1. 最小复现：建议先运行
+下面给出三个粒度的复现，追求完整复现可直接跳到第三步。
 
-下面的命令只训练冻结骨干 `head-only` 和本文配置 D-SSF-LoRA，每个配置运行 seeds 0/1/2，共 6 次训练。它可以最快验证数据、训练、聚合和多种子结果是否完整连通。
+### 1. 最小复现（测试）
+
+下面的命令只训练冻结backbone的`head-only`组 和本文配置 D-SSF-LoRA，每个配置运行 seeds 0/1/2，共 6 次训练。它可以最快验证数据、训练、聚合和多种子结果是否完整连通。
 
 ```bash
 physlite-run --suite main --only op_head allocation_q_last8_r4
@@ -157,5 +157,7 @@ physlite-report --suite deit_b --verify
 | E | SSF+LoRA last-4 q/v, r2 | rank 扫描 | 31,488 | .684 +/- .007 | .654 +/- .029 | 2,166 |
 | E | SSF+LoRA last-4 q/v, r8 | rank 扫描 | 68,352 | .730 +/- .009 | .726 +/- .033 | 2,168 |
 | E | SSF+LoRA last-4 q/v, r16 | rank 扫描 | 117,504 | .749 +/- .031 | .752 +/- .045 | 2,170 |
+
+论文附录B中有相同汇总。
 
 最小复现完成后直接打开 `outputs/main/summary.md`。主实验完成后，机器可读的完整矩阵、配对差值、置信区间和 family bootstrap 位于 `outputs/main/summary.json`；论文原始运行的对应快照位于 `reference_results/main.json`。
