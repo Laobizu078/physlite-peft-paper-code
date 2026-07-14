@@ -6,7 +6,7 @@
 
 ## 实验环境
 
-实验在单张 NVIDIA GeForce RTX 4070 Ti SUPER 16GB 上完成，训练使用 CUDA 12.8 wheel 和 AMP加速。完整实验至少需要占用 6GB 显存。
+实验在单张 NVIDIA GeForce RTX 4070 Ti SUPER 16GB 上完成，训练使用 CUDA 12.8 wheel 和 AMP加速。完整实验建议至少提供 16GB 显存，最低提供 8GB 显存。
 
 全部直接依赖及版本如下：
 
@@ -46,7 +46,7 @@ python -m pip install -e . --no-deps
 建议创建名为 `physlite-peft` 的独立conda虚拟环境（运行代码本身不依赖该环境名），仓库提供等价的快捷conda环境安装方式：
 
 ```bash
-conda env create -f environment.yml`
+conda env create -f environment.yml
 ```
 
 (可选)安装完成后检查环境、CUDA 和代码：
@@ -70,7 +70,7 @@ physlite-prepare
 
 数据集直链：[Physion.zip](https://physics-benchmarking-neurips2021-dataset.s3.amazonaws.com/Physion.zip)。脚本校验值为:`1c80e51d9d299a54cc78bb20b9bb9b597d3b18067fd2f5a06e4e0a3a0c2c0c26`。
 
-固定的无泄漏 CSV 划分已保存在 `data/manifests/`。DeiT 和 DINOv2 预训练权重由 `timm` 在首次训练时自动下载。
+固定的数据集 CSV 划分已保存在 `data/manifests/`。DeiT 和 DINOv2 预训练权重由 `timm` 在首次训练时自动下载。
 
 ## 运行方式
 
