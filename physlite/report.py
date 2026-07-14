@@ -1,3 +1,5 @@
+"""Aggregate raw runs into paper tables, paired effects, and audit artifacts."""
+
 from __future__ import annotations
 
 import argparse
@@ -48,10 +50,14 @@ SUITE_CONTRASTS = {
 
 
 def run_key(run: dict) -> tuple:
+    """Return the manifest-seed key used to pair two configurations."""
+
     return (run["manifest"], run["seed"])
 
 
 def read_run(path: Path, manifest: Path) -> dict:
+    """Read one raw run and retain metrics needed for aggregation."""
+
     data = json.loads(path.read_text(encoding="utf-8"))
     history = data.get("history", [])
     best_epoch = None
@@ -79,6 +85,8 @@ def read_run(path: Path, manifest: Path) -> dict:
 
 
 def summarize_row(name: str, label: str, axes: list[str], runs: list[dict], head_params: int | None) -> dict:
+    """Summarize all seeds and manifests belonging to one configuration."""
+
     metric = lambda key: mean_std([run[key] for run in runs])
     val_mean, val_std = metric("val_bacc")
     bacc_mean, bacc_std = metric("test_bacc")
@@ -111,6 +119,8 @@ def summarize_row(name: str, label: str, axes: list[str], runs: list[dict], head
 
 
 def structural_head_params(config: dict, suite: str) -> int:
+    """Count task-head parameters when a suite has no completed head-only run."""
+
     settings = {**config["defaults"], **config["protocols"][config["suites"][suite]["protocol"]]}
     backbone = create_timm_model(settings["backbone"], pretrained=False, image_size=settings["image_size"])
     model = FrameBackboneClassifier(
@@ -126,6 +136,8 @@ def structural_head_params(config: dict, suite: str) -> int:
 
 
 def paired(rows: dict[str, dict], contrasts: list[tuple[str, str, str]]) -> list[dict]:
+    """Compute configured paired contrasts from matched raw runs."""
+
     output = []
     for left, right, label in contrasts:
         if left not in rows or right not in rows:
@@ -137,6 +149,8 @@ def paired(rows: dict[str, dict], contrasts: list[tuple[str, str, str]]) -> list
 
 
 def scenario_effect(left: dict, right: dict) -> list[dict]:
+    """Break a paired contrast down by physical scenario."""
+
     left_runs = {run_key(run): run for run in left["runs"]}
     right_runs = {run_key(run): run for run in right["runs"]}
     scenarios = sorted(
@@ -151,6 +165,8 @@ def scenario_effect(left: dict, right: dict) -> list[dict]:
 
 
 def main_analysis(rows: dict[str, dict], bootstrap_samples: int) -> dict:
+    """Build the main-suite uncertainty and efficiency analyses."""
+
     analysis = {
         "paired_contrasts": paired(rows, MAIN_CONTRASTS),
         "parameter_pareto": pareto_front(list(rows.values()), "peft_params"),
@@ -179,11 +195,15 @@ def main_analysis(rows: dict[str, dict], bootstrap_samples: int) -> dict:
 
 
 def compact_rows(rows: list[dict]) -> list[dict]:
+    """Keep only cross-suite summary fields for the combined artifact."""
+
     keys = ["name", "n", "trainable_params", "peft_params", "test_bacc_mean", "test_bacc_std", "test_f1_mean", "peak_mem_mb_mean"]
     return [{key: row.get(key) for key in keys} for row in rows]
 
 
 def serializable_rows(rows: list[dict]) -> list[dict]:
+    """Remove bulky per-sample fields from suite-level summary rows."""
+
     output = []
     for row in rows:
         clean = dict(row)
@@ -196,6 +216,8 @@ def serializable_rows(rows: list[dict]) -> list[dict]:
 
 
 def markdown(suite: str, rows: list[dict], comparisons: list[dict]) -> str:
+    """Render a concise human-readable summary table."""
+
     lines = [f"# {suite} results", "", "| Configuration | N | PEFT params | Test BAcc | F1 | Peak MiB |", "| --- | ---: | ---: | ---: | ---: | ---: |"]
     for row in rows:
         peft = "n/a" if row["peft_params"] is None else f"{row['peft_params']:,}"
@@ -212,6 +234,8 @@ def markdown(suite: str, rows: list[dict], comparisons: list[dict]) -> str:
 
 
 def compare_reference(suite: str, rows: list[dict], reference_dir: Path, tolerance: float) -> list[str]:
+    """Compare reproduced BAcc means with the released reference snapshot."""
+
     path = reference_dir / f"{suite}.json"
     if not path.exists():
         return [f"{suite}: no reference file"]
@@ -228,6 +252,8 @@ def compare_reference(suite: str, rows: list[dict], reference_dir: Path, toleran
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse suite aggregation and reference-verification options."""
+
     parser = argparse.ArgumentParser(description="Aggregate raw runs and reproduce paper-facing statistics.")
     parser.add_argument("--config", type=Path, default=ROOT / "configs/paper.json")
     parser.add_argument("--suite", action="append", help="Suite to summarize; repeat as needed.")
@@ -241,6 +267,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Aggregate selected suites and write JSON and Markdown reports."""
+
     args = parse_args()
     config = load_config(absolute(args.config))
     output_root = absolute(args.output_root)

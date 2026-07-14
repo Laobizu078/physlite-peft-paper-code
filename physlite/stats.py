@@ -1,3 +1,5 @@
+"""Small statistical helpers used by the paper result aggregator."""
+
 from __future__ import annotations
 
 import math
@@ -10,12 +12,16 @@ T_95 = {2: 12.7062, 3: 4.3027, 4: 3.1824, 5: 2.7764}
 
 
 def mean_std(values: list[float]) -> tuple[float, float]:
+    """Return the sample mean and standard deviation."""
+
     if not values:
         raise ValueError("Cannot summarize an empty sample.")
     return statistics.mean(values), statistics.stdev(values) if len(values) > 1 else 0.0
 
 
 def paired_interval(left: dict[tuple, float], right: dict[tuple, float]) -> dict:
+    """Compute a paired mean difference and two-sided 95% t interval."""
+
     keys = sorted(left.keys() & right.keys())
     if not keys:
         raise ValueError("The two configurations have no matched runs.")
@@ -37,6 +43,8 @@ def paired_interval(left: dict[tuple, float], right: dict[tuple, float]) -> dict
 
 
 def pareto_front(rows: list[dict], cost_key: str, score_key: str = "test_bacc_mean") -> list[str]:
+    """Return configurations not dominated in cost and score."""
+
     candidates = [row for row in rows if row.get(cost_key) is not None]
     return [
         row["name"]
@@ -51,6 +59,8 @@ def pareto_front(rows: list[dict], cost_key: str, score_key: str = "test_bacc_me
 
 
 def balanced_accuracy(records: list[dict]) -> float:
+    """Compute binary balanced accuracy from serialized predictions."""
+
     recalls = []
     for label in (0, 1):
         selected = [record for record in records if int(record["label"]) == label]
@@ -61,6 +71,8 @@ def balanced_accuracy(records: list[dict]) -> float:
 
 
 def percentile(values: list[float], quantile: float) -> float:
+    """Compute a linearly interpolated empirical percentile."""
+
     ordered = sorted(values)
     position = (len(ordered) - 1) * quantile
     lower = int(position)
@@ -76,6 +88,8 @@ def family_bootstrap(
     seed: int = 20260712,
     rng: random.Random | None = None,
 ) -> dict:
+    """Bootstrap paired BAcc differences by resampling complete families."""
+
     seeds = sorted(left.keys() & right.keys())
     if not seeds:
         raise ValueError("No paired prediction records were found.")
@@ -93,6 +107,7 @@ def family_bootstrap(
     observed = [balanced_accuracy(left[s]) - balanced_accuracy(right[s]) for s in seeds]
     rng = rng or random.Random(seed)
     distribution = []
+    # Resample families as units so correlated videos never split across draws.
     for _ in range(samples):
         sampled = [rng.choice(families) for _ in families]
         seed_differences = []

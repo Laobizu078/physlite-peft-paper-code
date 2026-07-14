@@ -26,8 +26,9 @@ physlite-prepare = "physlite.prepare:main"
 physlite-probe = "physlite.probe:main"
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
+include = ["physlite*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["."]

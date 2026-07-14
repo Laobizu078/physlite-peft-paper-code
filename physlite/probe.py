@@ -1,3 +1,5 @@
+"""Evaluate trained checkpoints under temporal counterfactual transforms."""
+
 from __future__ import annotations
 
 import argparse
@@ -20,6 +22,8 @@ MODES = ["original", "first_repeat", "last_repeat", "reverse", "endpoint_step", 
 
 
 def transform(video: torch.Tensor, mode: str) -> torch.Tensor:
+    """Apply a batch-consistent temporal intervention to ``[B, T, C, H, W]``."""
+
     if mode == "original":
         return video
     if mode == "first_repeat":
@@ -42,6 +46,8 @@ def transform(video: torch.Tensor, mode: str) -> torch.Tensor:
 
 
 def build_model(config: dict, device: torch.device) -> FrameBackboneClassifier:
+    """Reconstruct the SSF-LoRA model described by a saved run config."""
+
     backbone = create_timm_model(config["backbone"], config["pretrained"], config["image_size"])
     model = FrameBackboneClassifier(
         backbone=backbone,
@@ -66,6 +72,8 @@ def build_model(config: dict, device: torch.device) -> FrameBackboneClassifier:
 
 @torch.no_grad()
 def evaluate(model: torch.nn.Module, loader: DataLoader, device: torch.device, amp: bool) -> dict[str, dict]:
+    """Measure all temporal interventions on the same model and samples."""
+
     values = {mode: {"labels": [], "predictions": [], "true_probabilities": []} for mode in MODES}
     for raw_video, label in loader:
         raw_video = raw_video.to(device, non_blocking=True)
@@ -91,6 +99,8 @@ def evaluate(model: torch.nn.Module, loader: DataLoader, device: torch.device, a
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse checkpoint, dataset, and probe output locations."""
+
     parser = argparse.ArgumentParser(description="Run same-model temporal counterfactual probes.")
     parser.add_argument("--run-dir", type=Path, default=ROOT / "outputs/counterfactual/rank8_motion_stats")
     parser.add_argument("--manifest", type=Path, default=ROOT / "data/manifests/main.csv")
@@ -102,6 +112,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Run counterfactual probes for each seed and aggregate their metrics."""
+
     args = parse_args()
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is required for the paper probes.")

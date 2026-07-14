@@ -1,3 +1,5 @@
+"""Expand the paper configuration into validated, reproducible training jobs."""
+
 from __future__ import annotations
 
 import argparse
@@ -12,11 +14,13 @@ from pathlib import Path
 import torch
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @dataclass(frozen=True)
 class Job:
+    """A fully resolved training run with its manifest and output locations."""
+
     suite: str
     name: str
     label: str
@@ -28,6 +32,8 @@ class Job:
 
 
 def load_config(path: Path) -> dict:
+    """Load a versioned paper experiment configuration from JSON."""
+
     config = json.loads(path.read_text(encoding="utf-8"))
     if config.get("schema_version") != 1:
         raise ValueError(f"Unsupported config schema in {path}")
@@ -35,11 +41,15 @@ def load_config(path: Path) -> dict:
 
 
 def absolute(path: str | Path) -> Path:
+    """Resolve repository-relative paths while preserving absolute paths."""
+
     value = Path(path)
     return value if value.is_absolute() else ROOT / value
 
 
 def manifests_for(config: dict, suite: dict) -> list[Path]:
+    """Resolve the manifest files selected by an experiment suite."""
+
     pattern = suite.get("manifests")
     if pattern:
         paths = [Path(path) for path in sorted(glob.glob(str(absolute(pattern))))]
@@ -50,6 +60,8 @@ def manifests_for(config: dict, suite: dict) -> list[Path]:
 
 
 def build_jobs(config: dict, suite_name: str, output_root: Path, only: set[str] | None, seeds: list[int] | None) -> list[Job]:
+    """Expand one suite across configurations, manifests, and random seeds."""
+
     suite = config["suites"][suite_name]
     protocol = config["protocols"][suite["protocol"]]
     manifests = manifests_for(config, suite)
@@ -83,6 +95,8 @@ def build_jobs(config: dict, suite_name: str, output_root: Path, only: set[str] 
 
 
 def command(job: Job) -> list[str]:
+    """Build the interpreter-safe command for one training job."""
+
     arguments = dict(job.arguments)
     arguments["manifest"] = str(job.manifest)
     arguments["data_root"] = str(absolute(arguments["data_root"]))
@@ -103,6 +117,8 @@ def command(job: Job) -> list[str]:
 
 
 def validate_jobs(jobs: list[Job]) -> None:
+    """Reject duplicate outputs, missing manifests, and non-CUDA paper jobs."""
+
     outputs = [job.output for job in jobs]
     if len(outputs) != len(set(outputs)):
         raise RuntimeError("Experiment config generates duplicate output paths.")
@@ -114,6 +130,8 @@ def validate_jobs(jobs: list[Job]) -> None:
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse experiment-suite selection and execution controls."""
+
     parser = argparse.ArgumentParser(description="Run one or more paper experiment suites sequentially on one GPU.")
     parser.add_argument("--config", type=Path, default=ROOT / "configs/paper.json")
     parser.add_argument("--suite", action="append", help="Suite name; repeat for multiple suites.")
@@ -127,6 +145,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Run or list the resolved paper jobs in deterministic sequence."""
+
     args = parse_args()
     config = load_config(absolute(args.config))
     if args.list:

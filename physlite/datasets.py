@@ -1,3 +1,5 @@
+"""Manifest-backed video datasets and deterministic frame sampling utilities."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -13,6 +15,8 @@ from torch.utils.data import Dataset
 
 @dataclass(frozen=True)
 class VideoSample:
+    """Metadata needed to load one labeled video and audit its split family."""
+
     video_path: str
     label: int
     video_id: str = "unknown"
@@ -128,6 +132,8 @@ def load_video_frames(
     sampling: Literal["uniform", "early", "last", "observed"] = "uniform",
     observation_seconds: float = 1.5,
 ) -> torch.Tensor:
+    """Decode selected RGB frames from a video into a ``[T, C, H, W]`` tensor."""
+
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"Could not open video: {video_path}")
@@ -167,6 +173,8 @@ def select_frame_indices(
     sampling: Literal["uniform", "early", "last", "observed"],
     observation_seconds: float = 1.5,
 ) -> np.ndarray:
+    """Choose frame indices for full-video or observation-prefix protocols."""
+
     if total <= 0 or frames <= 0:
         raise ValueError("total and frames must be positive.")
     if sampling == "last":

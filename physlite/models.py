@@ -1,3 +1,5 @@
+"""Temporal heads and parameter-efficient adapters for timm ViT backbones."""
+
 from __future__ import annotations
 
 import torch
@@ -224,6 +226,8 @@ class FrameBackboneClassifier(nn.Module):
 
 
 def count_trainable_params(model: nn.Module) -> tuple[int, int]:
+    """Return trainable and total parameter counts."""
+
     total = sum(p.numel() for p in model.parameters())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     return trainable, total
@@ -273,6 +277,60 @@ class LoRAQKVLinear(nn.Module):
             q = q + self.q_b(self.q_a(dropped)) * self.scale
         if self.v_a is not None and self.v_b is not None:
             v = v + self.v_b(self.v_a(dropped)) * self.scale
+        return torch.cat([q, k, v], dim=-1)
+
+
+class QueryDominantLoRAQKVLinear(nn.Module):
+    """Distributed query LoRA with an optional low-rank late value correction."""
+
+    def __init__(
+        self,
+        base: nn.Linear,
+        query_rank: int = 4,
+        query_alpha: float = 8.0,
+        value_rank: int | None = None,
+        value_alpha: float = 2.0,
+        dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+        if base.out_features % 3 != 0:
+            raise ValueError("Expected fused qkv projection with out_features divisible by 3.")
+        self.base = base
+        for param in self.base.parameters():
+            param.requires_grad = False
+        dim = base.out_features // 3
+        self.dropout = nn.Dropout(dropout)
+        self.q_scale = query_alpha / query_rank
+        self.q_a = nn.Linear(base.in_features, query_rank, bias=False)
+        self.q_b = nn.Linear(query_rank, dim, bias=False)
+        self.v_scale = None
+        self.v_a = None
+        self.v_b = None
+        nn.init.kaiming_uniform_(self.q_a.weight, a=5**0.5)
+        nn.init.zeros_(self.q_b.weight)
+        if value_rank is not None:
+            self.add_value_branch(value_rank, value_alpha)
+
+    def add_value_branch(self, rank: int, alpha: float) -> None:
+        """Initialize the optional value branch without changing query weights."""
+
+        if self.v_a is not None or self.v_b is not None:
+            raise RuntimeError("Value branch is already initialized.")
+        dim = self.base.out_features // 3
+        self.v_scale = alpha / rank
+        self.v_a = nn.Linear(self.base.in_features, rank, bias=False)
+        self.v_b = nn.Linear(rank, dim, bias=False)
+        nn.init.kaiming_uniform_(self.v_a.weight, a=5**0.5)
+        nn.init.zeros_(self.v_b.weight)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out = self.base(x)
+        dim = out.shape[-1] // 3
+        q, k, v = out.split(dim, dim=-1)
+        dropped = self.dropout(x)
+        q = q + self.q_b(self.q_a(dropped)) * self.q_scale
+        if self.v_a is not None and self.v_b is not None and self.v_scale is not None:
+            v = v + self.v_b(self.v_a(dropped)) * self.v_scale
         return torch.cat([q, k, v], dim=-1)
 
 
@@ -618,18 +676,24 @@ def build_temporal_context(video: torch.Tensor) -> torch.Tensor:
 
 
 def set_lora_motion_gates(backbone: nn.Module, gates: torch.Tensor) -> None:
+    """Attach per-frame motion gates to motion-aware LoRA wrappers."""
+
     for module in backbone.modules():
         if isinstance(module, (PhyGateLoRAQKVLinear, MotionValueIA3LoRAQKVLinear)):
             module.set_motion_gate(gates)
 
 
 def set_lora_temporal_context(backbone: nn.Module, context: torch.Tensor) -> None:
+    """Attach temporal context to conditioned LoRA wrappers."""
+
     for module in backbone.modules():
         if isinstance(module, TemporalConditionedLoRAQKVLinear):
             module.set_temporal_context(context)
 
 
 def clear_lora_motion_gates(backbone: nn.Module) -> None:
+    """Clear transient motion and temporal context after a forward pass."""
+
     for module in backbone.modules():
         if isinstance(module, (PhyGateLoRAQKVLinear, MotionValueIA3LoRAQKVLinear)):
             module.set_motion_gate(None)
@@ -638,6 +702,8 @@ def clear_lora_motion_gates(backbone: nn.Module) -> None:
 
 
 def _select_tail_modules(items: list, layers: str) -> list:
+    """Select all, trailing, or explicitly indexed modules."""
+
     if layers == "all":
         return items
     if layers == "last_half":
@@ -711,7 +777,52 @@ def apply_lora_qv_to_vit(
     return len(selected)
 
 
+def apply_query_dominant_lora_to_vit(
+    backbone: nn.Module,
+    query_rank: int = 4,
+    query_alpha: float = 8.0,
+    query_layers: str = "last8",
+    value_rank: int = 1,
+    value_alpha: float = 2.0,
+    value_layers: str = "last4",
+    dropout: float = 0.0,
+) -> int:
+    """Inject query LoRA broadly and a smaller value correction near output."""
+
+    qkv_modules: list[tuple[nn.Module, str, nn.Linear]] = []
+    for parent in backbone.modules():
+        for child_name, child in parent.named_children():
+            if child_name == "qkv" and isinstance(child, nn.Linear):
+                qkv_modules.append((parent, child_name, child))
+    query_selected = _select_tail_modules(qkv_modules, query_layers)
+    value_ids = {id(child) for _, _, child in _select_tail_modules(qkv_modules, value_layers)}
+    if not query_selected:
+        raise RuntimeError("No fused qkv Linear modules found for query-dominant LoRA injection.")
+    if not value_ids.issubset({id(child) for _, _, child in query_selected}):
+        raise ValueError("Value-correction layers must be a subset of query-adapted layers.")
+    wrappers = {}
+    for parent, child_name, child in query_selected:
+        wrapper = QueryDominantLoRAQKVLinear(
+            child,
+            query_rank=query_rank,
+            query_alpha=query_alpha,
+            value_rank=None,
+            dropout=dropout,
+        )
+        setattr(
+            parent,
+            child_name,
+            wrapper,
+        )
+        wrappers[id(child)] = wrapper
+    for child_id in value_ids:
+        wrappers[child_id].add_value_branch(value_rank, value_alpha)
+    return len(query_selected)
+
+
 def apply_ssf_to_layernorm(backbone: nn.Module, layers: str = "all") -> int:
+    """Wrap selected LayerNorm modules with trainable scale and shift."""
+
     layer_norms: list[tuple[nn.Module, str, nn.LayerNorm]] = []
     for parent in backbone.modules():
         for child_name, child in parent.named_children():
@@ -726,6 +837,8 @@ def apply_ssf_to_layernorm(backbone: nn.Module, layers: str = "all") -> int:
 
 
 def apply_adapters_to_vit(backbone: nn.Module, bottleneck: int = 64, layers: str = "last4") -> int:
+    """Append residual bottleneck adapters to selected ViT blocks."""
+
     if not hasattr(backbone, "blocks"):
         raise RuntimeError("Backbone has no ViT-style blocks for adapter injection.")
     blocks = list(backbone.blocks)
@@ -772,6 +885,8 @@ def apply_adaptformer_to_vit(
 
 
 def apply_vpt_to_vit(backbone: nn.Module, prompt_tokens: int = 8, init_std: float = 0.02) -> ShallowVisualPrompt:
+    """Wrap a ViT backbone with shallow visual prompt tokens."""
+
     return ShallowVisualPrompt(backbone, prompt_tokens=prompt_tokens, init_std=init_std)
 
 
@@ -804,6 +919,8 @@ def apply_ia3_to_vit(backbone: nn.Module, layers: str = "last4", targets: str = 
 
 
 def enable_bitfit(backbone: nn.Module) -> int:
+    """Enable only backbone bias parameters and return their tensor count."""
+
     count = 0
     for name, param in backbone.named_parameters():
         if name.endswith(".bias"):

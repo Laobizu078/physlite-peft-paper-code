@@ -1,3 +1,5 @@
+"""Download Physion-Test-Core and validate the released leakage-free splits."""
+
 from __future__ import annotations
 
 import argparse
@@ -15,6 +17,8 @@ ARCHIVE_SHA256 = "1c80e51d9d299a54cc78bb20b9bb9b597d3b18067fd2f5a06e4e0a3a0c2c0c
 
 
 def sha256(path: Path) -> str:
+    """Return the SHA-256 digest of a file without loading it into memory."""
+
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
@@ -23,6 +27,8 @@ def sha256(path: Path) -> str:
 
 
 def download(url: str, destination: Path) -> None:
+    """Download a URL atomically through a temporary partial file."""
+
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(destination.suffix + ".part")
     with urllib.request.urlopen(url) as response, temporary.open("wb") as output:
@@ -31,6 +37,8 @@ def download(url: str, destination: Path) -> None:
 
 
 def verify_manifests(manifest_dir: Path, data_root: Path) -> None:
+    """Validate schema, size, family isolation, and video availability."""
+
     manifests = [manifest_dir / "main.csv", *sorted((manifest_dir / "repeated_splits").glob("split_*.csv"))]
     if len(manifests) != 6:
         raise RuntimeError(f"Expected main manifest plus five repeated splits, found {len(manifests)} files.")
@@ -52,6 +60,8 @@ def verify_manifests(manifest_dir: Path, data_root: Path) -> None:
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse dataset locations and optional offline preparation mode."""
+
     parser = argparse.ArgumentParser(description="Download Physion-Test-Core and validate the paper manifests.")
     parser.add_argument("--data-dir", type=Path, default=Path("data"))
     parser.add_argument("--manifest-dir", type=Path, default=Path("data/manifests"))
@@ -60,6 +70,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Prepare the dataset archive and verify every released manifest."""
+
     args = parse_args()
     archive = args.data_dir / "Physion.zip"
     data_root = args.data_dir / "Physion"

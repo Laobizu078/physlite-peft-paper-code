@@ -1,9 +1,13 @@
+"""Train one manifest-defined Physion run with a selected PEFT method."""
+
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
+import math
 import random
+import re
 import shlex
 import sys
 import time
@@ -22,6 +26,7 @@ from .models import (
     apply_adapters_to_vit,
     apply_ia3_to_vit,
     apply_lora_qv_to_vit,
+    apply_query_dominant_lora_to_vit,
     apply_ssf_to_layernorm,
     apply_vpt_to_vit,
     count_trainable_params,
@@ -34,6 +39,8 @@ IMAGENET_STD = torch.tensor([0.229, 0.224, 0.225]).view(1, 1, 3, 1, 1)
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse model, PEFT, optimization, protocol, and output options."""
+
     parser = argparse.ArgumentParser(description="Train one paper configuration on a manifest-based Physion split.")
     parser.add_argument("--manifest", default="data/manifests/main.csv")
     parser.add_argument("--data-root", default="data/Physion", help="Root prepended to relative video paths.")
@@ -55,6 +62,7 @@ def parse_args() -> argparse.Namespace:
             "motion_value_lora",
             "temporal_lora",
             "ssf_lora_qv",
+            "ssf_query_dominant_lora",
             "ssf_ia3_lora_qv",
             "ssf_phygate_lora",
             "ssf_motion_value_lora",
@@ -108,11 +116,56 @@ def parse_args() -> argparse.Namespace:
         help="After SSF warmup, keep SSF fixed while training the remaining PEFT parameters.",
     )
     parser.add_argument("--weight-decay", type=float, default=0.05)
+    parser.add_argument(
+        "--train-hflip-prob",
+        type=float,
+        default=0.0,
+        help="Probability of horizontally mirroring an entire training video; all frames share the transform.",
+    )
     parser.add_argument("--lora-rank", type=int, default=4)
     parser.add_argument("--lora-alpha", type=float, default=8.0)
     parser.add_argument("--lora-dropout", type=float, default=0.0)
     parser.add_argument("--lora-layers", default="last4")
     parser.add_argument("--lora-targets", default="qv", choices=["q", "v", "qv"])
+    parser.add_argument("--lora-value-rank", type=int, default=1)
+    parser.add_argument("--lora-value-alpha", type=float, default=2.0)
+    parser.add_argument("--lora-value-layers", default="last4")
+    parser.add_argument(
+        "--lora-plus-ratio",
+        type=float,
+        default=1.0,
+        help="LoRA-B/A learning-rate ratio; the geometric mean remains --peft-lr.",
+    )
+    parser.add_argument(
+        "--lora-depth-profile",
+        default="uniform",
+        choices=["uniform", "middle_focus"],
+        help="Optionally emphasize the earlier half of the selected LoRA blocks.",
+    )
+    parser.add_argument(
+        "--lora-depth-strength",
+        type=float,
+        default=0.5,
+        help="Middle-focus strength: earlier/later selected blocks use 1+s and 1-s.",
+    )
+    parser.add_argument(
+        "--lora-allocation-warmup-epochs",
+        type=int,
+        default=0,
+        help="Geometrically introduce LoRA+ and depth allocation over this many epoch transitions.",
+    )
+    parser.add_argument(
+        "--peft-ema-decay",
+        type=float,
+        default=0.0,
+        help="EMA decay for trainable parameters; zero disables trajectory averaging.",
+    )
+    parser.add_argument(
+        "--peft-ema-start-epoch",
+        type=int,
+        default=1,
+        help="First epoch whose optimizer trajectory contributes to the trainable-parameter EMA.",
+    )
     parser.add_argument("--ssf-layers", default="all")
     parser.add_argument("--adapter-layers", default="last4")
     parser.add_argument("--adapter-bottleneck", type=int, default=64)
@@ -125,16 +178,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ia3-layers", default="last4")
     parser.add_argument("--ia3-targets", default="qv")
     parser.add_argument("--num-workers", type=int, default=2)
+    parser.add_argument(
+        "--loader-seed",
+        type=int,
+        default=None,
+        help="Optional independent training-loader RNG for strictly paired method comparisons.",
+    )
     parser.add_argument("--device", default="cuda", choices=["cuda", "cpu", "auto"])
     parser.add_argument("--pretrained", action="store_true")
     parser.add_argument("--amp", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output-json", default="outputs/manifest_run.json")
     parser.add_argument("--checkpoint-out", default=None)
+    parser.add_argument("--skip-test", action="store_true", help="Skip test and scenario evaluation during validation-only search.")
     return parser.parse_args()
 
 
 def set_seed(seed: int) -> None:
+    """Seed Python, NumPy, and PyTorch for repeatable single-GPU runs."""
+
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -144,6 +206,8 @@ def set_seed(seed: int) -> None:
 
 
 def resolve_device(requested: str) -> torch.device:
+    """Resolve a device request and fail explicitly when CUDA is unavailable."""
+
     if requested == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if requested == "cuda" and not torch.cuda.is_available():
@@ -152,6 +216,8 @@ def resolve_device(requested: str) -> torch.device:
 
 
 def create_timm_model(model_name: str, pretrained: bool, image_size: int):
+    """Create a feature-only timm model across fixed and configurable sizes."""
+
     import timm
 
     try:
@@ -161,12 +227,28 @@ def create_timm_model(model_name: str, pretrained: bool, image_size: int):
 
 
 def normalize_video(video: torch.Tensor, device: torch.device) -> torch.Tensor:
+    """Apply ImageNet channel normalization to a batched video tensor."""
+
     mean = IMAGENET_MEAN.to(device=device, dtype=video.dtype)
     std = IMAGENET_STD.to(device=device, dtype=video.dtype)
     return (video - mean) / std
 
 
+def apply_video_hflip(video: torch.Tensor, probability: float) -> torch.Tensor:
+    """Flip complete videos horizontally without changing temporal order."""
+
+    if probability <= 0.0:
+        return video
+    mask = torch.rand(video.shape[0], device=video.device) < probability
+    if mask.any():
+        video = video.clone()
+        video[mask] = video[mask].flip(dims=[-1])
+    return video
+
+
 def make_temporal_counterfactual(video: torch.Tensor, mode: str) -> torch.Tensor:
+    """Construct a temporal negative used by the optional contrastive loss."""
+
     if mode == "first_repeat":
         return video[:, :1].expand_as(video)
     if mode == "last_repeat":
@@ -177,6 +259,8 @@ def make_temporal_counterfactual(video: torch.Tensor, mode: str) -> torch.Tensor
 
 
 def make_loader(args: argparse.Namespace, split: str, shuffle: bool, scenario: str | None = None) -> DataLoader:
+    """Create a deterministic manifest loader for one split and scenario."""
+
     dataset = ManifestVideoDataset(
         args.manifest,
         data_root=args.data_root,
@@ -195,6 +279,11 @@ def make_loader(args: argparse.Namespace, split: str, shuffle: bool, scenario: s
         shuffle=shuffle,
         num_workers=args.num_workers,
         pin_memory=True,
+        generator=(
+            torch.Generator().manual_seed(args.loader_seed)
+            if shuffle and args.loader_seed is not None
+            else None
+        ),
     )
 
 
@@ -205,6 +294,8 @@ def evaluate_scenarios(
     device: torch.device,
     amp: bool,
 ) -> dict[str, dict]:
+    """Evaluate a model separately on each scenario in a manifest split."""
+
     df = pd.read_csv(args.manifest)
     if "scenario" not in df.columns:
         return {}
@@ -223,6 +314,8 @@ def evaluate(
     amp: bool,
     return_predictions: bool = False,
 ) -> dict:
+    """Compute classification metrics and optionally serialize predictions."""
+
     model.eval()
     y_true = []
     y_pred = []
@@ -266,6 +359,8 @@ def evaluate(
 
 
 def file_sha256(path: str | Path) -> str:
+    """Return the SHA-256 digest recorded with each experiment result."""
+
     digest = hashlib.sha256()
     with Path(path).open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
@@ -273,8 +368,168 @@ def file_sha256(path: str | Path) -> str:
     return digest.hexdigest()
 
 
+def _lora_factor(name: str) -> str | None:
+    """Classify a trainable parameter as a LoRA A or B factor."""
+
+    if re.search(r"\.(?:q|v)_a\.weight$", name):
+        return "a"
+    if re.search(r"\.(?:q|v)_b\.weight$", name):
+        return "b"
+    return None
+
+
+def _lora_block_index(name: str) -> int | None:
+    """Extract a ViT block index from a qualified parameter name."""
+
+    match = re.search(r"\.blocks\.(\d+)\.", name)
+    return int(match.group(1)) if match else None
+
+
+def build_optimizer_groups(model: torch.nn.Module, args: argparse.Namespace) -> list[dict]:
+    """Assign head, SSF, and LoRA factors their controlled learning rates."""
+
+    named_trainable = [(name, param) for name, param in model.named_parameters() if param.requires_grad]
+    selected_blocks = sorted(
+        {
+            block
+            for name, _ in named_trainable
+            if _lora_factor(name) is not None
+            for block in [_lora_block_index(name)]
+            if block is not None
+        }
+    )
+    # The profile redistributes LR within the selected depth at fixed parameters.
+    split = (len(selected_blocks) + 1) // 2
+    middle_blocks = set(selected_blocks[:split])
+
+    grouped: dict[tuple[str, float, float], list[torch.nn.Parameter]] = {}
+    for name, param in named_trainable:
+        if name.startswith("head."):
+            role, lr, weight_decay = "head", args.lr, args.weight_decay
+        elif name.endswith(".ssf_scale") or name.endswith(".ssf_shift"):
+            role = "ssf"
+            lr = args.ssf_lr if args.ssf_lr is not None else args.peft_lr
+            weight_decay = 0.0
+        else:
+            factor = _lora_factor(name)
+            depth_multiplier = 1.0
+            depth_label = "uniform"
+            if factor is not None and args.lora_depth_profile == "middle_focus":
+                block = _lora_block_index(name)
+                if block is not None:
+                    depth_multiplier = (
+                        1.0 + args.lora_depth_strength if block in middle_blocks else 1.0 - args.lora_depth_strength
+                    )
+                    depth_label = "middle" if block in middle_blocks else "late"
+            if factor == "a":
+                factor_multiplier = 1.0 / math.sqrt(args.lora_plus_ratio)
+                role = f"lora_a_{depth_label}"
+            elif factor == "b":
+                factor_multiplier = math.sqrt(args.lora_plus_ratio)
+                role = f"lora_b_{depth_label}"
+            else:
+                factor_multiplier = 1.0
+                role = "peft"
+            lr = args.peft_lr * factor_multiplier * depth_multiplier
+            weight_decay = 0.0
+        grouped.setdefault((role, lr, weight_decay), []).append(param)
+
+    param_groups = []
+    for (name, lr, weight_decay), params in grouped.items():
+        group_role = "ssf" if name == "ssf" else "head" if name == "head" else "peft"
+        neutral_lr = args.peft_lr if name.startswith("lora_") else lr
+        param_groups.append(
+            {
+                "params": params,
+                "lr": lr,
+                "base_lr": lr,
+                "neutral_lr": neutral_lr,
+                "weight_decay": weight_decay,
+                "group_name": name,
+                "group_role": group_role,
+            }
+        )
+    return param_groups
+
+
+def update_optimizer_lrs(optimizer: torch.optim.Optimizer, args: argparse.Namespace, epoch: int) -> None:
+    """Apply allocation warmup and optional staged SSF/LoRA training."""
+
+    allocation_warmup = args.lora_allocation_warmup_epochs
+    allocation_progress = 1.0 if allocation_warmup == 0 else min((epoch - 1) / allocation_warmup, 1.0)
+    for group in optimizer.param_groups:
+        target_lr = group["base_lr"]
+        neutral_lr = group["neutral_lr"]
+        if group["group_name"].startswith("lora_"):
+            target_lr = neutral_lr * (target_lr / neutral_lr) ** allocation_progress
+        group["lr"] = target_lr
+
+    if args.ssf_warmup_epochs > 0:
+        warming_up = epoch <= args.ssf_warmup_epochs
+        for group in optimizer.param_groups:
+            if group["group_role"] == "peft":
+                group["lr"] = 0.0 if warming_up else group["lr"]
+            elif group["group_role"] == "ssf":
+                ssf_lr = args.ssf_lr if args.ssf_lr is not None else args.peft_lr
+                group["lr"] = 0.0 if (not warming_up and args.freeze_ssf_after_warmup) else ssf_lr
+
+
+class TrainableEMA:
+    """Track and temporarily apply EMA weights for trainable parameters only."""
+
+    def __init__(self, model: torch.nn.Module, decay: float):
+        self.decay = decay
+        self.shadow = {
+            name: param.detach().clone()
+            for name, param in model.named_parameters()
+            if param.requires_grad
+        }
+
+    @torch.no_grad()
+    def update(self, model: torch.nn.Module) -> None:
+        """Update shadow weights from the current trainable parameters."""
+
+        for name, param in model.named_parameters():
+            if name in self.shadow:
+                self.shadow[name].lerp_(param.detach(), 1.0 - self.decay)
+
+    @torch.no_grad()
+    def apply(self, model: torch.nn.Module) -> dict[str, torch.Tensor]:
+        """Swap EMA weights into the model and return the original weights."""
+
+        backup = {}
+        for name, param in model.named_parameters():
+            if name in self.shadow:
+                backup[name] = param.detach().clone()
+                param.copy_(self.shadow[name])
+        return backup
+
+    @staticmethod
+    @torch.no_grad()
+    def restore(model: torch.nn.Module, backup: dict[str, torch.Tensor]) -> None:
+        """Restore parameters returned by :meth:`apply`."""
+
+        for name, param in model.named_parameters():
+            if name in backup:
+                param.copy_(backup[name])
+
+
 def main() -> None:
+    """Train, select by validation BAcc, evaluate, and serialize one run."""
+
     args = parse_args()
+    if args.lora_plus_ratio < 1.0:
+        raise ValueError("--lora-plus-ratio must be at least 1.")
+    if not 0.0 <= args.lora_depth_strength < 1.0:
+        raise ValueError("--lora-depth-strength must be in [0, 1).")
+    if args.lora_allocation_warmup_epochs < 0 or args.lora_allocation_warmup_epochs >= args.epochs:
+        raise ValueError("--lora-allocation-warmup-epochs must be in [0, epochs).")
+    if args.peft_ema_decay < 0.0 or args.peft_ema_decay >= 1.0:
+        raise ValueError("--peft-ema-decay must be in [0, 1).")
+    if args.peft_ema_start_epoch < 1 or args.peft_ema_start_epoch > args.epochs:
+        raise ValueError("--peft-ema-start-epoch must be in [1, epochs].")
+    if not 0.0 <= args.train_hflip_prob <= 1.0:
+        raise ValueError("--train-hflip-prob must be in [0, 1].")
     if args.ssf_warmup_epochs < 0 or args.ssf_warmup_epochs >= args.epochs:
         raise ValueError("--ssf-warmup-epochs must be in [0, epochs).")
     if args.ssf_warmup_epochs > 0 and not args.method.startswith("ssf_"):
@@ -348,6 +603,7 @@ def main() -> None:
         "motion_value_lora",
         "temporal_lora",
         "ssf_lora_qv",
+        "ssf_query_dominant_lora",
         "ssf_ia3_lora_qv",
         "ssf_phygate_lora",
         "ssf_motion_value_lora",
@@ -356,20 +612,32 @@ def main() -> None:
         motion_value_methods = {"motion_value_lora", "ssf_motion_value_lora"}
         ia3_lora_methods = {"ia3_lora_qv", "ssf_ia3_lora_qv"}
         effective_ia3_targets = "v" if args.method in motion_value_methods else args.ia3_targets
-        if args.method in {"ssf_lora_qv", "ssf_ia3_lora_qv", "ssf_phygate_lora", "ssf_motion_value_lora", "ssf_temporal_lora"}:
+        if args.method in {"ssf_lora_qv", "ssf_query_dominant_lora", "ssf_ia3_lora_qv", "ssf_phygate_lora", "ssf_motion_value_lora", "ssf_temporal_lora"}:
             peft_modules += apply_ssf_to_layernorm(model.backbone, layers=args.ssf_layers)
-        peft_modules += apply_lora_qv_to_vit(
-            model.backbone,
-            rank=args.lora_rank,
-            alpha=args.lora_alpha,
-            dropout=args.lora_dropout,
-            layers=args.lora_layers,
-            lora_targets=args.lora_targets,
-            phygate=args.method in {"phygate_lora", "ssf_phygate_lora"},
-            ia3_targets=effective_ia3_targets if args.method in ia3_lora_methods else None,
-            motion_value_gate=args.method in motion_value_methods,
-            temporal_conditioning=args.method in {"temporal_lora", "ssf_temporal_lora"},
-        )
+        if args.method == "ssf_query_dominant_lora":
+            peft_modules += apply_query_dominant_lora_to_vit(
+                model.backbone,
+                query_rank=args.lora_rank,
+                query_alpha=args.lora_alpha,
+                query_layers=args.lora_layers,
+                value_rank=args.lora_value_rank,
+                value_alpha=args.lora_value_alpha,
+                value_layers=args.lora_value_layers,
+                dropout=args.lora_dropout,
+            )
+        else:
+            peft_modules += apply_lora_qv_to_vit(
+                model.backbone,
+                rank=args.lora_rank,
+                alpha=args.lora_alpha,
+                dropout=args.lora_dropout,
+                layers=args.lora_layers,
+                lora_targets=args.lora_targets,
+                phygate=args.method in {"phygate_lora", "ssf_phygate_lora"},
+                ia3_targets=effective_ia3_targets if args.method in ia3_lora_methods else None,
+                motion_value_gate=args.method in motion_value_methods,
+                temporal_conditioning=args.method in {"temporal_lora", "ssf_temporal_lora"},
+            )
         model.to(device)
     trainable, total = count_trainable_params(model)
     print(f"params trainable={trainable:,} total={total:,} ratio={trainable / total:.4%}")
@@ -382,6 +650,7 @@ def main() -> None:
         "motion_value_lora",
         "temporal_lora",
         "ssf_lora_qv",
+        "ssf_query_dominant_lora",
         "ssf_ia3_lora_qv",
         "ssf_phygate_lora",
         "ssf_motion_value_lora",
@@ -396,58 +665,28 @@ def main() -> None:
             print(f"ia3 targets={'v' if args.method in {'motion_value_lora', 'ssf_motion_value_lora'} else args.ia3_targets}")
     print(f"samples train={len(train_loader.dataset)} val={len(val_loader.dataset)} test={len(test_loader.dataset)}")
 
-    head_params = []
-    ssf_params = []
-    peft_params = []
-    for name, param in model.named_parameters():
-        if not param.requires_grad:
-            continue
-        if name.startswith("head."):
-            head_params.append(param)
-        elif name.endswith(".ssf_scale") or name.endswith(".ssf_shift"):
-            ssf_params.append(param)
-        else:
-            peft_params.append(param)
-    param_groups = []
-    if head_params:
-        param_groups.append(
-            {"params": head_params, "lr": args.lr, "weight_decay": args.weight_decay, "group_name": "head"}
-        )
-    if ssf_params:
-        param_groups.append(
-            {
-                "params": ssf_params,
-                "lr": args.ssf_lr if args.ssf_lr is not None else args.peft_lr,
-                "weight_decay": 0.0,
-                "group_name": "ssf",
-            }
-        )
-    if peft_params:
-        param_groups.append(
-            {"params": peft_params, "lr": args.peft_lr, "weight_decay": 0.0, "group_name": "peft"}
-        )
+    param_groups = build_optimizer_groups(model, args)
     optimizer = torch.optim.AdamW(param_groups)
     loss_fn = torch.nn.CrossEntropyLoss()
     history = []
     best_val = None
     best_state = None
+    best_variant = None
+    ema = None
     start = time.perf_counter()
     for epoch in range(1, args.epochs + 1):
-        if args.ssf_warmup_epochs > 0:
-            warming_up = epoch <= args.ssf_warmup_epochs
-            for group in optimizer.param_groups:
-                if group["group_name"] == "peft":
-                    group["lr"] = 0.0 if warming_up else args.peft_lr
-                elif group["group_name"] == "ssf":
-                    ssf_lr = args.ssf_lr if args.ssf_lr is not None else args.peft_lr
-                    group["lr"] = 0.0 if (not warming_up and args.freeze_ssf_after_warmup) else ssf_lr
+        update_optimizer_lrs(optimizer, args, epoch)
+        if args.peft_ema_decay > 0.0 and epoch == args.peft_ema_start_epoch:
+            ema = TrainableEMA(model, args.peft_ema_decay)
         model.train()
         losses = []
         contrast_losses = []
         correct = 0
         total_seen = 0
         for video, label in train_loader:
-            video = normalize_video(video.to(device, non_blocking=True), device)
+            video = video.to(device, non_blocking=True)
+            video = apply_video_hflip(video, args.train_hflip_prob)
+            video = normalize_video(video, device)
             label = label.to(device, non_blocking=True)
             with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=args.amp and device.type == "cuda"):
                 logits = model(video)
@@ -465,11 +704,30 @@ def main() -> None:
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
+            if ema is not None:
+                ema.update(model)
             losses.append(float(loss.item()))
             pred = logits.argmax(dim=-1)
             correct += int((pred == label).sum().item())
             total_seen += int(label.numel())
-        val = evaluate(model, val_loader, device, args.amp)
+        raw_val = evaluate(model, val_loader, device, args.amp)
+        ema_val = None
+        selected_variant = "raw"
+        selected_val = raw_val
+        selected_state = None
+        if ema is not None:
+            cpu_rng_state = torch.random.get_rng_state()
+            cuda_rng_states = torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+            backup = ema.apply(model)
+            ema_val = evaluate(model, val_loader, device, args.amp)
+            if ema_val["balanced_acc"] > raw_val["balanced_acc"]:
+                selected_variant = "ema"
+                selected_val = ema_val
+                selected_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+            ema.restore(model, backup)
+            torch.random.set_rng_state(cpu_rng_state)
+            if cuda_rng_states is not None:
+                torch.cuda.set_rng_state_all(cuda_rng_states)
         train_loss = float(np.mean(losses))
         train_acc = correct / max(total_seen, 1)
         row = {
@@ -478,18 +736,26 @@ def main() -> None:
             "train_acc": train_acc,
             "temporal_contrast_loss": float(np.mean(contrast_losses)) if contrast_losses else 0.0,
             "group_lrs": {group["group_name"]: group["lr"] for group in optimizer.param_groups},
-            "val": val,
+            "val": selected_val,
+            "raw_val": raw_val,
+            "ema_val": ema_val,
+            "selected_variant": selected_variant,
         }
         history.append(row)
         print(json.dumps(row, ensure_ascii=False))
-        if best_val is None or val["balanced_acc"] > best_val["balanced_acc"]:
-            best_val = val
-            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+        if best_val is None or selected_val["balanced_acc"] > best_val["balanced_acc"]:
+            best_val = selected_val
+            best_variant = selected_variant
+            best_state = selected_state or {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
 
     if best_state is not None:
         model.load_state_dict(best_state)
-    test = evaluate(model, test_loader, device, args.amp, return_predictions=True)
-    test_by_scenario = {} if args.scenario is not None else evaluate_scenarios(args, model, args.test_split, device, args.amp)
+    test = None if args.skip_test else evaluate(model, test_loader, device, args.amp, return_predictions=True)
+    test_by_scenario = (
+        {}
+        if args.skip_test or args.scenario is not None
+        else evaluate_scenarios(args, model, args.test_split, device, args.amp)
+    )
     if device.type == "cuda":
         torch.cuda.synchronize()
     elapsed = time.perf_counter() - start
@@ -519,12 +785,23 @@ def main() -> None:
         "ssf_warmup_epochs": args.ssf_warmup_epochs,
         "freeze_ssf_after_warmup": args.freeze_ssf_after_warmup,
         "weight_decay": args.weight_decay,
+        "train_hflip_prob": args.train_hflip_prob,
         "lora_rank": args.lora_rank if args.method in lora_like_methods else None,
         "lora_alpha": args.lora_alpha if args.method in lora_like_methods else None,
         "lora_dropout": args.lora_dropout if args.method in lora_like_methods else None,
         "lora_layers": args.lora_layers if args.method in lora_like_methods else None,
         "lora_targets": args.lora_targets if args.method in lora_like_methods else None,
-        "ssf_layers": args.ssf_layers if args.method in {"ssf", "ssf_lora_qv", "ssf_ia3_lora_qv", "ssf_phygate_lora", "ssf_motion_value_lora", "ssf_temporal_lora"} else None,
+        "lora_value_rank": args.lora_value_rank if args.method == "ssf_query_dominant_lora" else None,
+        "lora_value_alpha": args.lora_value_alpha if args.method == "ssf_query_dominant_lora" else None,
+        "lora_value_layers": args.lora_value_layers if args.method == "ssf_query_dominant_lora" else None,
+        "lora_plus_ratio": args.lora_plus_ratio if args.method in lora_like_methods else None,
+        "lora_depth_profile": args.lora_depth_profile if args.method in lora_like_methods else None,
+        "lora_depth_strength": args.lora_depth_strength if args.method in lora_like_methods else None,
+        "lora_allocation_warmup_epochs": args.lora_allocation_warmup_epochs if args.method in lora_like_methods else None,
+        "peft_ema_decay": args.peft_ema_decay,
+        "peft_ema_start_epoch": args.peft_ema_start_epoch if args.peft_ema_decay > 0.0 else None,
+        "best_variant": best_variant,
+        "ssf_layers": args.ssf_layers if args.method in {"ssf", "ssf_lora_qv", "ssf_query_dominant_lora", "ssf_ia3_lora_qv", "ssf_phygate_lora", "ssf_motion_value_lora", "ssf_temporal_lora"} else None,
         "adapter_layers": args.adapter_layers if args.method == "adapter" else None,
         "adapter_bottleneck": args.adapter_bottleneck if args.method == "adapter" else None,
         "adaptformer_layers": args.adaptformer_layers if args.method == "adaptformer" else None,
@@ -549,10 +826,12 @@ def main() -> None:
         "test": test,
         "test_by_scenario": test_by_scenario,
         "history": history,
+        "skip_test": args.skip_test,
         "seconds": elapsed,
         "peak_mem_mb": torch.cuda.max_memory_allocated() / 1024 / 1024 if device.type == "cuda" else 0.0,
         "reproducibility": {
             "seed": args.seed,
+            "loader_seed": args.loader_seed,
             "manifest": str(Path(args.manifest).resolve()),
             "manifest_sha256": file_sha256(args.manifest),
             "data_root": str(Path(args.data_root).resolve()),
@@ -583,9 +862,10 @@ def main() -> None:
         torch.save(checkpoint, ckpt_path)
         result["checkpoint_out"] = str(ckpt_path)
     printable = dict(result)
-    printable_test = dict(test)
-    printable_test["prediction_count"] = len(printable_test.pop("predictions", []))
-    printable["test"] = printable_test
+    if test is not None:
+        printable_test = dict(test)
+        printable_test["prediction_count"] = len(printable_test.pop("predictions", []))
+        printable["test"] = printable_test
     print(json.dumps(printable, ensure_ascii=False, indent=2))
     out = Path(args.output_json)
     out.parent.mkdir(parents=True, exist_ok=True)

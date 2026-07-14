@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
+# Reproduce every paper suite using the currently activated Python environment.
 set -euo pipefail
 
-ENV_NAME="${CONDA_ENV_NAME:-cvpr_paper}"
-RUN=(conda run --no-capture-output -n "${ENV_NAME}")
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "${ROOT}"
 
-"${RUN[@]}" pip install -e . --no-deps
-"${RUN[@]}" physlite-prepare
-"${RUN[@]}" pytest -q
-"${RUN[@]}" physlite-run
-"${RUN[@]}" physlite-report --verify
-"${RUN[@]}" physlite-probe
+python -m pip install -e . --no-deps
+physlite-prepare
+pytest -q
+physlite-run
+physlite-report --verify
+physlite-probe

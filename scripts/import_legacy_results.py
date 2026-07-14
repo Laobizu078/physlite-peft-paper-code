@@ -75,10 +75,14 @@ KEEP = [
 
 
 def compact(row: dict, name: str) -> dict:
+    """Keep stable paper metrics and assign the release configuration name."""
+
     return {"name": name, **{key: row[key] for key in KEEP if key in row}}
 
 
 def import_repeated(root: Path) -> list[dict]:
+    """Convert the legacy repeated-split summary into release rows."""
+
     payload = json.loads((root / "repeated_split_budget_validation/summary.json").read_text(encoding="utf-8"))
     by_config: dict[str, list[float]] = {}
     for row in payload["rows"]:
@@ -95,6 +99,8 @@ def import_repeated(root: Path) -> list[dict]:
 
 
 def parse_args() -> argparse.Namespace:
+    """Parse the legacy output root and reference destination."""
+
     parser = argparse.ArgumentParser()
     parser.add_argument("legacy_outputs", type=Path)
     parser.add_argument("--destination", type=Path, default=Path("reference_results"))
@@ -102,6 +108,8 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    """Create compact reference snapshots from the development outputs."""
+
     args = parse_args()
     args.destination.mkdir(parents=True, exist_ok=True)
     for suite, (directory, names) in MAPPINGS.items():

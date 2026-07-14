@@ -1,12 +1,14 @@
 # 面向物理视频理解的高效微调实验
 
+作者：周文煜（学号：3024244529）
+
 本仓库复现课程论文中的 PEFT 实验。建议按下列四节从上到下执行；首次运行会自动下载数据集和预训练权重。所有训练均强制使用 CUDA，不会静默回退到 CPU。
 
 ## 实验环境
 
 实验在单张 NVIDIA GeForce RTX 4070 Ti SUPER 16GB 上完成，训练使用 CUDA 12.8 wheel 和 AMP。其他 NVIDIA GPU 也可运行，但驱动必须支持 CUDA 12.8；完整实验建议至少具有 16GB 显存。
 
-全部直接依赖及复现版本如下，安装过程不依赖本机已有的 `cvpr_paper` 环境：
+全部直接依赖及复现版本如下，建议创建名为 `physlite-peft` 的独立环境；运行代码本身不依赖该环境名：
 
 | 类别 | 依赖包 | 版本 | 用途 |
 | --- | --- | --- | --- |
@@ -27,8 +29,8 @@
 在本仓库根目录逐行执行即可从空环境安装全部依赖：
 
 ```bash
-conda create -n cvpr_paper python=3.12 pip -y
-conda activate cvpr_paper
+conda create -n physlite-peft python=3.12 pip -y
+conda activate physlite-peft
 
 python -m pip install --extra-index-url https://download.pytorch.org/whl/cu128 \
   torch==2.11.0+cu128 torchvision==0.26.0+cu128
