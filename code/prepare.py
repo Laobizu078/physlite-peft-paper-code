@@ -75,6 +75,10 @@ def main() -> None:
     args = parse_args()
     archive = args.data_dir / "Physion.zip"
     data_root = args.data_dir / "Physion"
+    # Release archives may preserve a local dataset symlink whose target is not
+    # available on another machine. Remove only a broken link before extraction.
+    if data_root.is_symlink() and not data_root.exists():
+        data_root.unlink()
     if not data_root.is_dir():
         if args.skip_download and not archive.is_file():
             raise RuntimeError(f"Dataset not found at {data_root} and --skip-download was used.")

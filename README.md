@@ -6,7 +6,7 @@
 
 ## 实验环境
 
-实验在单张 NVIDIA GeForce RTX 4070 Ti SUPER 16GB 上完成，训练使用 CUDA 12.8 wheel 和 AMP加速。完整实验建议至少提供 16GB 显存，最低提供 8GB 显存。
+实验在 Ubuntu 22.04 系统内，单张 NVIDIA GeForce RTX 4070 Ti SUPER 16GB 上完成，训练使用 CUDA 12.8 wheel 和 AMP加速。完整实验建议至少提供 16GB 显存，最低提供 8GB 显存。
 
 全部直接依赖及版本如下：
 
@@ -28,9 +28,15 @@
 
 在本仓库根目录逐行执行即可从空环境安装全部依赖：
 
+下面这组命令创建名为 `physlite-peft` 的独立conda虚拟环境（运行代码本身不依赖该环境名）并pip安装依赖，可根据缺少的依赖进行选择性安装。
+
+提示：最后一行 `python -m pip install -e . --no-deps` 必须执行，因为它安装仓库本身，该仓库使用基于 pyproject.toml 的现代 Python 项目管理。
+
 ```bash
 conda create -n physlite-peft python=3.12 pip -y
 conda activate physlite-peft
+
+python -m pip install setuptools==80.10.2
 
 python -m pip install --extra-index-url https://download.pytorch.org/whl/cu128 \
   torch==2.11.0+cu128 torchvision==0.26.0+cu128
@@ -38,12 +44,12 @@ python -m pip install --extra-index-url https://download.pytorch.org/whl/cu128 \
 python -m pip install \
   numpy==2.4.6 pandas==3.0.3 opencv-python-headless==4.13.0.92 \
   scikit-learn==1.9.0 scipy==1.17.1 timm==1.0.27 \
-  remotezip==0.12.3 tensorboard==2.20.0 pytest==8.4.2 setuptools==80.10.2
+  remotezip==0.12.3 tensorboard==2.20.0 pytest==8.4.2
 
 python -m pip install -e . --no-deps
 ```
 
-建议创建名为 `physlite-peft` 的独立conda虚拟环境（运行代码本身不依赖该环境名），仓库提供等价的快捷conda环境安装方式：
+仓库内 `environment.yml` 文件提供等价的快捷conda环境安装方式：
 
 ```bash
 conda env create -f environment.yml
@@ -73,6 +79,10 @@ physlite-prepare
 固定的数据集 CSV 划分已保存在 `data/manifests/`。DeiT 和 DINOv2 预训练权重由 `timm` 在首次训练时自动下载。
 
 ## 运行方式
+
+需要强调的是，第一节（实验环境）中给出的命令 `python -m pip install -e . --no-deps` 的作用是安装当前仓库本身，并注册 physlite-run、physlite-prepare、physlite-report 等命令。省略该命令会导致 physlite 模块或相关 CLI 找不到，因此即使依赖完整也必须执行该命令。
+
+一切结束后，可使用 `python -m pip uninstall physlite-peft` 命令来卸载仓库。
 
 下面给出三个粒度的复现，追求完整复现可直接跳到第三步。
 
